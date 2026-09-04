@@ -7,6 +7,7 @@ tools/*/tmp/
 
 # Local verification output (binaries, screenshots, logs and reports).
 artifacts/
+.tmp/
 
 # Local browser screenshots used for visual QA; they can contain test identities.
 research/visual-qa-upstreams/

@@ -5152,6 +5152,9 @@ type GroupMutation struct {
 	id                      *int64
 	name                    *string
 	remark                  *string
+	category                *string
+	display_order           *int64
+	adddisplay_order        *int64
 	visibility              *group.Visibility
 	public_status           *group.PublicStatus
 	routing_mode            *group.RoutingMode
@@ -5356,6 +5359,112 @@ func (m *GroupMutation) OldRemark(ctx context.Context) (v string, err error) {
 // ResetRemark resets all changes to the "remark" field.
 func (m *GroupMutation) ResetRemark() {
 	m.remark = nil
+}
+
+// SetCategory sets the "category" field.
+func (m *GroupMutation) SetCategory(s string) {
+	m.category = &s
+}
+
+// Category returns the value of the "category" field in the mutation.
+func (m *GroupMutation) Category() (r string, exists bool) {
+	v := m.category
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCategory returns the old "category" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldCategory(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCategory is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCategory requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCategory: %w", err)
+	}
+	return oldValue.Category, nil
+}
+
+// ResetCategory resets all changes to the "category" field.
+func (m *GroupMutation) ResetCategory() {
+	m.category = nil
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (m *GroupMutation) SetDisplayOrder(i int64) {
+	m.display_order = &i
+	m.adddisplay_order = nil
+}
+
+// DisplayOrder returns the value of the "display_order" field in the mutation.
+func (m *GroupMutation) DisplayOrder() (r int64, exists bool) {
+	v := m.display_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDisplayOrder returns the old "display_order" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldDisplayOrder(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDisplayOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDisplayOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDisplayOrder: %w", err)
+	}
+	return oldValue.DisplayOrder, nil
+}
+
+// AddDisplayOrder adds i to the "display_order" field.
+func (m *GroupMutation) AddDisplayOrder(i int64) {
+	if m.adddisplay_order != nil {
+		*m.adddisplay_order += i
+	} else {
+		m.adddisplay_order = &i
+	}
+}
+
+// AddedDisplayOrder returns the value that was added to the "display_order" field in this mutation.
+func (m *GroupMutation) AddedDisplayOrder() (r int64, exists bool) {
+	v := m.adddisplay_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (m *GroupMutation) ClearDisplayOrder() {
+	m.display_order = nil
+	m.adddisplay_order = nil
+	m.clearedFields[group.FieldDisplayOrder] = struct{}{}
+}
+
+// DisplayOrderCleared returns if the "display_order" field was cleared in this mutation.
+func (m *GroupMutation) DisplayOrderCleared() bool {
+	_, ok := m.clearedFields[group.FieldDisplayOrder]
+	return ok
+}
+
+// ResetDisplayOrder resets all changes to the "display_order" field.
+func (m *GroupMutation) ResetDisplayOrder() {
+	m.display_order = nil
+	m.adddisplay_order = nil
+	delete(m.clearedFields, group.FieldDisplayOrder)
 }
 
 // SetVisibility sets the "visibility" field.
@@ -5995,12 +6104,18 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 13)
 	if m.name != nil {
 		fields = append(fields, group.FieldName)
 	}
 	if m.remark != nil {
 		fields = append(fields, group.FieldRemark)
+	}
+	if m.category != nil {
+		fields = append(fields, group.FieldCategory)
+	}
+	if m.display_order != nil {
+		fields = append(fields, group.FieldDisplayOrder)
 	}
 	if m.visibility != nil {
 		fields = append(fields, group.FieldVisibility)
@@ -6041,6 +6156,10 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case group.FieldRemark:
 		return m.Remark()
+	case group.FieldCategory:
+		return m.Category()
+	case group.FieldDisplayOrder:
+		return m.DisplayOrder()
 	case group.FieldVisibility:
 		return m.Visibility()
 	case group.FieldPublicStatus:
@@ -6072,6 +6191,10 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldName(ctx)
 	case group.FieldRemark:
 		return m.OldRemark(ctx)
+	case group.FieldCategory:
+		return m.OldCategory(ctx)
+	case group.FieldDisplayOrder:
+		return m.OldDisplayOrder(ctx)
 	case group.FieldVisibility:
 		return m.OldVisibility(ctx)
 	case group.FieldPublicStatus:
@@ -6112,6 +6235,20 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRemark(v)
+		return nil
+	case group.FieldCategory:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCategory(v)
+		return nil
+	case group.FieldDisplayOrder:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDisplayOrder(v)
 		return nil
 	case group.FieldVisibility:
 		v, ok := value.(group.Visibility)
@@ -6184,6 +6321,9 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *GroupMutation) AddedFields() []string {
 	var fields []string
+	if m.adddisplay_order != nil {
+		fields = append(fields, group.FieldDisplayOrder)
+	}
 	if m.addprice_multiplier != nil {
 		fields = append(fields, group.FieldPriceMultiplier)
 	}
@@ -6195,6 +6335,8 @@ func (m *GroupMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *GroupMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
+	case group.FieldDisplayOrder:
+		return m.AddedDisplayOrder()
 	case group.FieldPriceMultiplier:
 		return m.AddedPriceMultiplier()
 	}
@@ -6206,6 +6348,13 @@ func (m *GroupMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *GroupMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case group.FieldDisplayOrder:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDisplayOrder(v)
+		return nil
 	case group.FieldPriceMultiplier:
 		v, ok := value.(int)
 		if !ok {
@@ -6221,6 +6370,9 @@ func (m *GroupMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *GroupMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(group.FieldDisplayOrder) {
+		fields = append(fields, group.FieldDisplayOrder)
+	}
 	if m.FieldCleared(group.FieldDeletedAt) {
 		fields = append(fields, group.FieldDeletedAt)
 	}
@@ -6238,6 +6390,9 @@ func (m *GroupMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *GroupMutation) ClearField(name string) error {
 	switch name {
+	case group.FieldDisplayOrder:
+		m.ClearDisplayOrder()
+		return nil
 	case group.FieldDeletedAt:
 		m.ClearDeletedAt()
 		return nil
@@ -6254,6 +6409,12 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldRemark:
 		m.ResetRemark()
+		return nil
+	case group.FieldCategory:
+		m.ResetCategory()
+		return nil
+	case group.FieldDisplayOrder:
+		m.ResetDisplayOrder()
 		return nil
 	case group.FieldVisibility:
 		m.ResetVisibility()
@@ -18985,6 +19146,8 @@ type UpstreamMutation struct {
 	id                    *int64
 	name                  *string
 	base_url              *string
+	display_order         *int64
+	adddisplay_order      *int64
 	upstream_key          *string
 	models                *[]string
 	appendmodels          []string
@@ -19207,6 +19370,76 @@ func (m *UpstreamMutation) OldBaseURL(ctx context.Context) (v string, err error)
 // ResetBaseURL resets all changes to the "base_url" field.
 func (m *UpstreamMutation) ResetBaseURL() {
 	m.base_url = nil
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (m *UpstreamMutation) SetDisplayOrder(i int64) {
+	m.display_order = &i
+	m.adddisplay_order = nil
+}
+
+// DisplayOrder returns the value of the "display_order" field in the mutation.
+func (m *UpstreamMutation) DisplayOrder() (r int64, exists bool) {
+	v := m.display_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDisplayOrder returns the old "display_order" field's value of the Upstream entity.
+// If the Upstream object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UpstreamMutation) OldDisplayOrder(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDisplayOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDisplayOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDisplayOrder: %w", err)
+	}
+	return oldValue.DisplayOrder, nil
+}
+
+// AddDisplayOrder adds i to the "display_order" field.
+func (m *UpstreamMutation) AddDisplayOrder(i int64) {
+	if m.adddisplay_order != nil {
+		*m.adddisplay_order += i
+	} else {
+		m.adddisplay_order = &i
+	}
+}
+
+// AddedDisplayOrder returns the value that was added to the "display_order" field in this mutation.
+func (m *UpstreamMutation) AddedDisplayOrder() (r int64, exists bool) {
+	v := m.adddisplay_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (m *UpstreamMutation) ClearDisplayOrder() {
+	m.display_order = nil
+	m.adddisplay_order = nil
+	m.clearedFields[upstream.FieldDisplayOrder] = struct{}{}
+}
+
+// DisplayOrderCleared returns if the "display_order" field was cleared in this mutation.
+func (m *UpstreamMutation) DisplayOrderCleared() bool {
+	_, ok := m.clearedFields[upstream.FieldDisplayOrder]
+	return ok
+}
+
+// ResetDisplayOrder resets all changes to the "display_order" field.
+func (m *UpstreamMutation) ResetDisplayOrder() {
+	m.display_order = nil
+	m.adddisplay_order = nil
+	delete(m.clearedFields, upstream.FieldDisplayOrder)
 }
 
 // SetUpstreamKey sets the "upstream_key" field.
@@ -20686,12 +20919,15 @@ func (m *UpstreamMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UpstreamMutation) Fields() []string {
-	fields := make([]string, 0, 31)
+	fields := make([]string, 0, 32)
 	if m.name != nil {
 		fields = append(fields, upstream.FieldName)
 	}
 	if m.base_url != nil {
 		fields = append(fields, upstream.FieldBaseURL)
+	}
+	if m.display_order != nil {
+		fields = append(fields, upstream.FieldDisplayOrder)
 	}
 	if m.upstream_key != nil {
 		fields = append(fields, upstream.FieldUpstreamKey)
@@ -20792,6 +21028,8 @@ func (m *UpstreamMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case upstream.FieldBaseURL:
 		return m.BaseURL()
+	case upstream.FieldDisplayOrder:
+		return m.DisplayOrder()
 	case upstream.FieldUpstreamKey:
 		return m.UpstreamKey()
 	case upstream.FieldModels:
@@ -20863,6 +21101,8 @@ func (m *UpstreamMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldName(ctx)
 	case upstream.FieldBaseURL:
 		return m.OldBaseURL(ctx)
+	case upstream.FieldDisplayOrder:
+		return m.OldDisplayOrder(ctx)
 	case upstream.FieldUpstreamKey:
 		return m.OldUpstreamKey(ctx)
 	case upstream.FieldModels:
@@ -20943,6 +21183,13 @@ func (m *UpstreamMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBaseURL(v)
+		return nil
+	case upstream.FieldDisplayOrder:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDisplayOrder(v)
 		return nil
 	case upstream.FieldUpstreamKey:
 		v, ok := value.(string)
@@ -21155,6 +21402,9 @@ func (m *UpstreamMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *UpstreamMutation) AddedFields() []string {
 	var fields []string
+	if m.adddisplay_order != nil {
+		fields = append(fields, upstream.FieldDisplayOrder)
+	}
 	if m.addmultiplier_bp != nil {
 		fields = append(fields, upstream.FieldMultiplierBp)
 	}
@@ -21181,6 +21431,8 @@ func (m *UpstreamMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *UpstreamMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
+	case upstream.FieldDisplayOrder:
+		return m.AddedDisplayOrder()
 	case upstream.FieldMultiplierBp:
 		return m.AddedMultiplierBp()
 	case upstream.FieldRequestCount:
@@ -21202,6 +21454,13 @@ func (m *UpstreamMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *UpstreamMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case upstream.FieldDisplayOrder:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDisplayOrder(v)
+		return nil
 	case upstream.FieldMultiplierBp:
 		v, ok := value.(int)
 		if !ok {
@@ -21252,6 +21511,9 @@ func (m *UpstreamMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *UpstreamMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(upstream.FieldDisplayOrder) {
+		fields = append(fields, upstream.FieldDisplayOrder)
+	}
 	if m.FieldCleared(upstream.FieldUpstreamKey) {
 		fields = append(fields, upstream.FieldUpstreamKey)
 	}
@@ -21302,6 +21564,9 @@ func (m *UpstreamMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *UpstreamMutation) ClearField(name string) error {
 	switch name {
+	case upstream.FieldDisplayOrder:
+		m.ClearDisplayOrder()
+		return nil
 	case upstream.FieldUpstreamKey:
 		m.ClearUpstreamKey()
 		return nil
@@ -21351,6 +21616,9 @@ func (m *UpstreamMutation) ResetField(name string) error {
 		return nil
 	case upstream.FieldBaseURL:
 		m.ResetBaseURL()
+		return nil
+	case upstream.FieldDisplayOrder:
+		m.ResetDisplayOrder()
 		return nil
 	case upstream.FieldUpstreamKey:
 		m.ResetUpstreamKey()

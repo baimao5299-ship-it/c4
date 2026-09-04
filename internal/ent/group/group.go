@@ -19,6 +19,10 @@ const (
 	FieldName = "name"
 	// FieldRemark holds the string denoting the remark field in the database.
 	FieldRemark = "remark"
+	// FieldCategory holds the string denoting the category field in the database.
+	FieldCategory = "category"
+	// FieldDisplayOrder holds the string denoting the display_order field in the database.
+	FieldDisplayOrder = "display_order"
 	// FieldVisibility holds the string denoting the visibility field in the database.
 	FieldVisibility = "visibility"
 	// FieldPublicStatus holds the string denoting the public_status field in the database.
@@ -80,6 +84,8 @@ var Columns = []string{
 	FieldID,
 	FieldName,
 	FieldRemark,
+	FieldCategory,
+	FieldDisplayOrder,
 	FieldVisibility,
 	FieldPublicStatus,
 	FieldRoutingMode,
@@ -110,6 +116,8 @@ func ValidColumn(column string) bool {
 var (
 	// DefaultRemark holds the default value on creation for the "remark" field.
 	DefaultRemark string
+	// DefaultCategory holds the default value on creation for the "category" field.
+	DefaultCategory string
 	// DefaultPriceMultiplier holds the default value on creation for the "price_multiplier" field.
 	DefaultPriceMultiplier int
 	// DefaultProtocolConvert holds the default value on creation for the "protocol_convert" field.
@@ -219,6 +227,16 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByRemark orders the results by the remark field.
 func ByRemark(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRemark, opts...).ToFunc()
+}
+
+// ByCategory orders the results by the category field.
+func ByCategory(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCategory, opts...).ToFunc()
+}
+
+// ByDisplayOrder orders the results by the display_order field.
+func ByDisplayOrder(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDisplayOrder, opts...).ToFunc()
 }
 
 // ByVisibility orders the results by the visibility field.

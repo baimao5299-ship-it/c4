@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Trash2, FolderOpen, Filter, UserPlus, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, FolderOpen, Filter, UserPlus, X, ListOrdered } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
 import { formatMultiplierValue, isStorableMultiplier } from '@/lib/multiplier'
 import { ModelValidationProgress } from '@/components/model-validation-progress'
+import { SortableOrderPanel } from '@/components/sortable-list'
 import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
 
@@ -376,12 +377,15 @@ export default function Groups() {
   const [order, setOrder] = useState<SortOrder>('desc')
   const [offset, setOffset] = useState(0)
   const [limit, setLimit] = useState(20)
+  const [reorderOpen, setReorderOpen] = useState(false)
 
+  const queryKey = ['groups', { limit, offset, name, sort: activeSort ?? 'display_order', order: activeSort ? order : 'asc' }] as const
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['groups', { limit, offset, name, sort: activeSort ?? 'id', order }],
-    queryFn: () => api.listGroups({ limit, offset, name: name || undefined, sort: activeSort ?? 'id', order }),
+    queryKey,
+    queryFn: () => api.listGroups({ limit, offset, name: name || undefined, sort: activeSort ?? 'display_order', order: activeSort ? order : 'asc' }),
   })
-  const rows = data?.rows ?? []
+  const rows = useMemo(() => data?.rows ?? [], [data?.rows])
+  const categoryOptions = useMemo(() => Array.from(new Set(rows.map(group => group.Category?.trim()).filter((value): value is string => !!value))).sort((a, b) => a.localeCompare(b)), [rows])
 
   // —— 行勾选（跨页保留，筛选/翻页后清空）——
   const [selected, setSelected] = useState<number[]>([])
@@ -435,6 +439,18 @@ export default function Groups() {
       qc.invalidateQueries({ queryKey: ['groups'] })
       setSelected([])
       closeBatchRename('submitted')
+    },
+  })
+  const reorder = useMutation({
+    mutationFn: (ids: number[]) => api.reorderGroups(ids),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['user', 'channel-monitor'] })
+      await qc.invalidateQueries({ queryKey: ['groups'] })
+      toast.add({ title: t('groups.reorderSaved'), type: 'success' })
+    },
+    onError: async error => {
+      await qc.invalidateQueries({ queryKey: ['groups'] })
+      toast.add({ title: t('common.loadFailed', { message: (error as Error)?.message ?? t('groups.reorderFailed') }), type: 'error' })
     },
   })
   // BatchBar 的 onUpdate 返回 promise：对话框关闭（提交成功/取消）时 resolve。
@@ -617,6 +633,7 @@ export default function Groups() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createRemark, setCreateRemark] = useState('')
+  const [createCategory, setCreateCategory] = useState('')
   // The defaults stay opinionated -- public, x1, automatic negotiation -- but
   // each one is editable here. Hiding them forced a create-then-reopen-and-edit
   // round trip for the common cases of a private group or a non-x1 multiplier,
@@ -639,6 +656,7 @@ export default function Groups() {
       const body: components['schemas']['GroupCreate'] = {
         name: n,
         remark: createRemark.trim() || undefined,
+        category: createCategory.trim() || undefined,
         visibility: createVisibility,
         routing_mode: createRoutingMode,
         allowed_models: createAllowedModels,
@@ -666,6 +684,7 @@ export default function Groups() {
     // invent metadata, but the field itself is editable in the dialog.
     setCreateName(makeAutoGroupName(t('groups.autoNamePrefix')))
     setCreateRemark('')
+    setCreateCategory('')
     setCreateVisibility('public')
     setCreateProtocols(['auto'])
     setCreateMultiplier('')
@@ -680,6 +699,7 @@ export default function Groups() {
   const [editTarget, setEditTarget] = useState<Group | null>(null)
   const [editName, setEditName] = useState('')
   const [editRemark, setEditRemark] = useState('')
+  const [editCategory, setEditCategory] = useState('')
   const [editVisibility, setEditVisibility] = useState<GroupVisibility>('public')
   const [editPublicStatus, setEditPublicStatus] = useState<GroupPublicStatus>('available')
   const [editProtocols, setEditProtocols] = useState<GroupProtocolConvert[]>([])
@@ -692,7 +712,7 @@ export default function Groups() {
   const editAutoModelKey = useRef<string | null>(null)
   const { data: upstreamRowsData, isLoading: upstreamRowsLoading, isError: upstreamRowsError, refetch: refetchUpstreams } = useQuery({
     queryKey: ['groups', 'upstream-options'],
-    queryFn: () => api.listUpstreams({ limit: 200, offset: 0 }),
+    queryFn: () => api.listUpstreams({ limit: 200, offset: 0, sort: 'display_order', order: 'asc' }),
     enabled: createOpen || editTarget != null,
     staleTime: 30_000,
   })
@@ -810,6 +830,7 @@ export default function Groups() {
     setEditTarget(group)
     setEditName(group.Name ?? '')
     setEditRemark(group.Remark ?? '')
+    setEditCategory(group.Category ?? '')
     setEditVisibility(group.Visibility ?? 'public')
     setEditPublicStatus(group.PublicStatus ?? 'available')
     setEditRoutingMode(group.RoutingMode ?? 'accounts')
@@ -824,7 +845,7 @@ export default function Groups() {
 
   const rename = useMutation({
     mutationFn: () => {
-      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), remark: editRemark.trim(), visibility: editVisibility, public_status: editPublicStatus, routing_mode: editRoutingMode, allowed_models: editAllowedModels, protocol_convert: editProtocols }
+      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), remark: editRemark.trim(), category: editCategory.trim(), visibility: editVisibility, public_status: editPublicStatus, routing_mode: editRoutingMode, allowed_models: editAllowedModels, protocol_convert: editProtocols }
       const m = normalizeMultiplierInput(editMultiplier, t('groups.multiplierInvalid'))
       if (m !== undefined) body.price_multiplier = m // 正常值直接提交；输入为空则省略键（后端保持原值）
       // The API commits policy and the complete member set in one database
@@ -850,15 +871,25 @@ export default function Groups() {
   })
 
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
+  const canReorder = activeSort == null && name === '' && rows.length > 1 && !batchDelete.isPending && !batchRename.isPending
+  const applyReorder = (ids: number[]) => {
+    if (!canReorder || reorder.isPending) return
+    const byID = new Map(rows.map(row => [row.ID!, row]))
+    qc.setQueryData<components['schemas']['GroupListResponse']>(queryKey, current => current ? { ...current, rows: ids.map(id => byID.get(id)).filter((row): row is Group => row != null) } : current)
+    reorder.mutate(ids)
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('groups.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('groups.subtitle')}</p>
         </div>
-        <Button onClick={openCreate}><Plus /> {t('groups.new')}</Button>
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          <Button variant="outline" onClick={() => setReorderOpen(open => !open)} disabled={!canReorder && !reorderOpen} aria-pressed={reorderOpen}><ListOrdered />{t(reorderOpen ? 'groups.closeReorder' : 'groups.reorder')}</Button>
+          <Button onClick={openCreate}><Plus /> {t('groups.new')}</Button>
+        </div>
       </div>
 
       <ListToolbar
@@ -877,6 +908,17 @@ export default function Groups() {
           openBatchRename()
         })}
       />
+
+      {reorderOpen && canReorder && (
+        <SortableOrderPanel
+          items={rows.map(group => ({ id: group.ID!, label: group.Name ?? `#${group.ID}`, detail: group.Category || t('groups.uncategorized') }))}
+          saving={reorder.isPending}
+          label={t('groups.reorderTitle')}
+          hint={t(reorder.isPending ? 'groups.reorderSaving' : 'groups.reorderHint')}
+          dragLabel={name => t('groups.dragLabel', { name })}
+          onReorder={applyReorder}
+        />
+      )}
 
       {isError ? (
         <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
@@ -912,6 +954,7 @@ export default function Groups() {
                   </TableHead>
                   <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="name" label={t('groups.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
+                  <TableHead>{t('groups.table.category')}</TableHead>
                   <TableHead>{t('groups.table.remark')}</TableHead>
                   <TableHead>{t('groups.table.visibility')}</TableHead>
                   <TableHead>{t('groups.table.publicStatus')}</TableHead>
@@ -930,6 +973,7 @@ export default function Groups() {
                     </TableCell>
                     <TableCell className="tabular-nums">{g.ID}</TableCell>
                     <TableCell className="max-w-36 truncate" title={g.Name}>{g.Name}</TableCell>
+                    <TableCell className="max-w-32 truncate text-sm" title={g.Category || undefined}>{g.Category || t('groups.uncategorized')}</TableCell>
                     <TableCell className="max-w-48 truncate text-sm text-muted-foreground" title={g.Remark ?? undefined}>{g.Remark || '—'}</TableCell>
                     <TableCell><VisibilityBadge visibility={g.Visibility} /></TableCell>
                     <TableCell><PublicStatusBadge status={g.PublicStatus} /></TableCell>
@@ -986,6 +1030,11 @@ export default function Groups() {
               <Label htmlFor="grp-create-remark">{t('groups.remarkLabel')}</Label>
               <Input id="grp-create-remark" value={createRemark} maxLength={500} placeholder={t('groups.remarkPlaceholder')} onChange={e => setCreateRemark(e.target.value)} />
               <p className="text-xs text-muted-foreground">{t('groups.remarkHint')}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-create-category">{t('groups.categoryLabel')}</Label>
+              <Input id="grp-create-category" list="group-category-options" value={createCategory} maxLength={50} placeholder={t('groups.categoryPlaceholder')} onChange={e => setCreateCategory(e.target.value)} />
+              <p className="text-xs text-muted-foreground">{t('groups.categoryHint')}</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="grp-create-visibility">{t('groups.visibilityLabel')}</Label>
@@ -1074,6 +1123,11 @@ export default function Groups() {
               <p className="text-xs text-muted-foreground">{t('groups.remarkHint')}</p>
             </div>
             <div className="space-y-1.5">
+              <Label htmlFor="grp-edit-category">{t('groups.categoryLabel')}</Label>
+              <Input id="grp-edit-category" list="group-category-options" value={editCategory} maxLength={50} placeholder={t('groups.categoryPlaceholder')} onChange={e => setEditCategory(e.target.value)} />
+              <p className="text-xs text-muted-foreground">{t('groups.categoryHint')}</p>
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="grp-edit-visibility">{t('groups.visibilityLabel')}</Label>
               <Select
                 items={Object.fromEntries([['public', t('groups.visibilityPublic')], ['private', t('groups.visibilityPrivate')]])}
@@ -1154,6 +1208,10 @@ export default function Groups() {
       </Dialog>
 
       {/* —— 删除确认（单行） —— */}
+      <datalist id="group-category-options">
+        {categoryOptions.map(category => <option key={category} value={category} />)}
+      </datalist>
+
       <Dialog open={!!deleting} onOpenChange={o => { if (!o && !remove.isPending) { remove.reset(); setDeleting(null) } }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>

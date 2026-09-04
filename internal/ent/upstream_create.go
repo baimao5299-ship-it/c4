@@ -37,6 +37,20 @@ func (_c *UpstreamCreate) SetBaseURL(v string) *UpstreamCreate {
 	return _c
 }
 
+// SetDisplayOrder sets the "display_order" field.
+func (_c *UpstreamCreate) SetDisplayOrder(v int64) *UpstreamCreate {
+	_c.mutation.SetDisplayOrder(v)
+	return _c
+}
+
+// SetNillableDisplayOrder sets the "display_order" field if the given value is not nil.
+func (_c *UpstreamCreate) SetNillableDisplayOrder(v *int64) *UpstreamCreate {
+	if v != nil {
+		_c.SetDisplayOrder(*v)
+	}
+	return _c
+}
+
 // SetUpstreamKey sets the "upstream_key" field.
 func (_c *UpstreamCreate) SetUpstreamKey(v string) *UpstreamCreate {
 	_c.mutation.SetUpstreamKey(v)
@@ -673,6 +687,10 @@ func (_c *UpstreamCreate) createSpec() (*Upstream, *sqlgraph.CreateSpec) {
 		_spec.SetField(upstream.FieldBaseURL, field.TypeString, value)
 		_node.BaseURL = value
 	}
+	if value, ok := _c.mutation.DisplayOrder(); ok {
+		_spec.SetField(upstream.FieldDisplayOrder, field.TypeInt64, value)
+		_node.DisplayOrder = &value
+	}
 	if value, ok := _c.mutation.UpstreamKey(); ok {
 		_spec.SetField(upstream.FieldUpstreamKey, field.TypeString, value)
 		_node.UpstreamKey = &value
@@ -894,6 +912,30 @@ func (u *UpstreamUpsert) SetBaseURL(v string) *UpstreamUpsert {
 // UpdateBaseURL sets the "base_url" field to the value that was provided on create.
 func (u *UpstreamUpsert) UpdateBaseURL() *UpstreamUpsert {
 	u.SetExcluded(upstream.FieldBaseURL)
+	return u
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (u *UpstreamUpsert) SetDisplayOrder(v int64) *UpstreamUpsert {
+	u.Set(upstream.FieldDisplayOrder, v)
+	return u
+}
+
+// UpdateDisplayOrder sets the "display_order" field to the value that was provided on create.
+func (u *UpstreamUpsert) UpdateDisplayOrder() *UpstreamUpsert {
+	u.SetExcluded(upstream.FieldDisplayOrder)
+	return u
+}
+
+// AddDisplayOrder adds v to the "display_order" field.
+func (u *UpstreamUpsert) AddDisplayOrder(v int64) *UpstreamUpsert {
+	u.Add(upstream.FieldDisplayOrder, v)
+	return u
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (u *UpstreamUpsert) ClearDisplayOrder() *UpstreamUpsert {
+	u.SetNull(upstream.FieldDisplayOrder)
 	return u
 }
 
@@ -1426,6 +1468,34 @@ func (u *UpstreamUpsertOne) SetBaseURL(v string) *UpstreamUpsertOne {
 func (u *UpstreamUpsertOne) UpdateBaseURL() *UpstreamUpsertOne {
 	return u.Update(func(s *UpstreamUpsert) {
 		s.UpdateBaseURL()
+	})
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (u *UpstreamUpsertOne) SetDisplayOrder(v int64) *UpstreamUpsertOne {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.SetDisplayOrder(v)
+	})
+}
+
+// AddDisplayOrder adds v to the "display_order" field.
+func (u *UpstreamUpsertOne) AddDisplayOrder(v int64) *UpstreamUpsertOne {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.AddDisplayOrder(v)
+	})
+}
+
+// UpdateDisplayOrder sets the "display_order" field to the value that was provided on create.
+func (u *UpstreamUpsertOne) UpdateDisplayOrder() *UpstreamUpsertOne {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.UpdateDisplayOrder()
+	})
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (u *UpstreamUpsertOne) ClearDisplayOrder() *UpstreamUpsertOne {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.ClearDisplayOrder()
 	})
 }
 
@@ -2200,6 +2270,34 @@ func (u *UpstreamUpsertBulk) SetBaseURL(v string) *UpstreamUpsertBulk {
 func (u *UpstreamUpsertBulk) UpdateBaseURL() *UpstreamUpsertBulk {
 	return u.Update(func(s *UpstreamUpsert) {
 		s.UpdateBaseURL()
+	})
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (u *UpstreamUpsertBulk) SetDisplayOrder(v int64) *UpstreamUpsertBulk {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.SetDisplayOrder(v)
+	})
+}
+
+// AddDisplayOrder adds v to the "display_order" field.
+func (u *UpstreamUpsertBulk) AddDisplayOrder(v int64) *UpstreamUpsertBulk {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.AddDisplayOrder(v)
+	})
+}
+
+// UpdateDisplayOrder sets the "display_order" field to the value that was provided on create.
+func (u *UpstreamUpsertBulk) UpdateDisplayOrder() *UpstreamUpsertBulk {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.UpdateDisplayOrder()
+	})
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (u *UpstreamUpsertBulk) ClearDisplayOrder() *UpstreamUpsertBulk {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.ClearDisplayOrder()
 	})
 }
 

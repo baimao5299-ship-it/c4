@@ -45,6 +45,10 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	category := ""
+	if in.Category != nil {
+		category = strings.TrimSpace(*in.Category)
+	}
 	mult, err := apiMultiplierToMillis(in.PriceMultiplier) // nil = 未指定；0~10 → 万分数
 	if err != nil {
 		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
@@ -99,7 +103,7 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		g := &domain.Group{
-			Name: in.Name, Remark: remark, Visibility: visibility, PublicStatus: publicStatus, RoutingMode: routingMode,
+			Name: in.Name, Remark: remark, Category: category, Visibility: visibility, PublicStatus: publicStatus, RoutingMode: routingMode,
 			AllowedModels: allowedModels, PriceMultiplier: 10000,
 			ProtocolConverts: pcs,
 		}
@@ -114,7 +118,7 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 		httpface.WriteJSON(w, http.StatusOK, toAPIGroup(created))
 		return
 	}
-	g, err := h.svc.CreateGroupWithRoutingAndRemark(r.Context(), in.Name, remark, visibility, mult, pcs, routingMode, allowedModels)
+	g, err := h.svc.CreateGroupWithRoutingAndRemark(r.Context(), in.Name, remark, category, visibility, mult, pcs, routingMode, allowedModels)
 	if err != nil {
 		httpface.WriteServiceErr(w, err)
 		return
@@ -136,7 +140,7 @@ func (h *AdminAPI) GetGroups(w http.ResponseWriter, r *http.Request, params GetG
 		Limit:  httpface.ClampLimit(int(deref(params.Limit))),
 		Offset: int(deref(params.Offset)),
 		Name:   deref(params.Name),
-		Sort:   deref(params.Sort),
+		Sort:   string(deref(params.Sort)),
 		Order:  string(deref(params.Order)),
 	}
 	rows, total, err := h.svc.ListGroups(r.Context(), q)
@@ -149,6 +153,19 @@ func (h *AdminAPI) GetGroups(w http.ResponseWriter, r *http.Request, params GetG
 		out = append(out, toAPIGroup(g))
 	}
 	httpface.WriteJSON(w, http.StatusOK, GroupListResponse{Total: total, Rows: out})
+}
+
+func (h *AdminAPI) PostGroupsReorder(w http.ResponseWriter, r *http.Request) {
+	var in ReorderRequest
+	if err := decode(r, &in); err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	if err := h.svc.ReorderGroups(r.Context(), in.Ids); err != nil {
+		httpface.WriteServiceErr(w, err)
+		return
+	}
+	httpface.WriteJSON(w, http.StatusOK, ReorderResponse{Reordered: len(in.Ids)})
 }
 
 // GetGroupsId 分组详情（ServerInterface）。
@@ -182,6 +199,9 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 			return
 		}
 		g.Remark = remark
+	}
+	if in.Category != nil {
+		g.Category = strings.TrimSpace(*in.Category)
 	}
 	if in.PublicStatus != nil {
 		g.PublicStatus = domain.GroupPublicStatus(*in.PublicStatus)

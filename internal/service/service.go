@@ -660,7 +660,7 @@ func validateAccount(a *domain.Account) error {
 var listSortFields = map[string][]string{
 	"templates": {"id", "name", "base_url", "created_at", "updated_at"},
 	"accounts":  {"id", "name", "template_id", "status", "cooldown_until", "weight", "max_concurrency", "last_used_at", "created_at", "updated_at"},
-	"groups":    {"id", "name", "created_at", "updated_at"},
+	"groups":    {"id", "name", "created_at", "updated_at", "display_order"},
 	"users":     {"id", "email", "role", "status", "max_concurrency", "created_at", "updated_at"},
 	"keys":      {"id", "name", "status", "max_concurrency", "quota", "quota_used", "created_at", "updated_at"},
 	// 与 repo 层 keyAdminSortFields 白名单一致（双保险；/api/admin/keys——管理端仅
@@ -675,7 +675,7 @@ var listSortFields = map[string][]string{
 	// 与 repo 层 priceEntrySortFields 白名单一致（双保险；/api/admin/prices）。
 	"price_entries": {"model", "updated_at"},
 	// 与 repo 层 upstreamSortFields 白名单一致（双保险；/api/admin/upstreams）。
-	"upstreams": {"id", "name", "base_url", "multiplier_bp", "request_count", "success_count", "failure_count", "last_checked_at", "created_at", "updated_at"},
+	"upstreams": {"id", "name", "base_url", "multiplier_bp", "request_count", "success_count", "failure_count", "last_checked_at", "created_at", "updated_at", "display_order"},
 }
 
 // validateListQuery sort/order 白名单校验（非法 → ErrInvalidInput；handler 依赖此 400）。

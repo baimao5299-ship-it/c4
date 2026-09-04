@@ -310,10 +310,11 @@ type Account struct {
 // of truth, while this record provides cost, balance and probe visibility without
 // changing the hot path. UpstreamKey is write-only at the API boundary.
 type Upstream struct {
-	ID          int64
-	Name        string
-	BaseURL     string
-	UpstreamKey *string
+	ID           int64
+	Name         string
+	BaseURL      string
+	UpstreamKey  *string
+	DisplayOrder *int64
 	// Models is the persisted capability list, including models retained after
 	// an incomplete validation. ModelsCheckedAt determines whether the list is
 	// exhaustive; an unchecked list remains visible to operators but does not
@@ -587,8 +588,11 @@ type Group struct {
 	ID   int64
 	Name string
 	// Remark is an administrator-authored note shown to users on public groups.
-	Remark     string
-	Visibility GroupVisibility
+	Remark string
+	// Category is an administrator-authored user-facing channel grouping.
+	Category     string
+	DisplayOrder *int64
+	Visibility   GroupVisibility
 	// PublicStatus is the administrator-controlled label shown to end users.
 	PublicStatus GroupPublicStatus
 	// RoutingMode selects the scheduler source. Empty values are treated as the

@@ -253,7 +253,7 @@ export default function Users() {
   // 全部组（组倍率/可见性展示；账号弹窗同款 limit:100 取全量）。
   const groupsAll = useQuery({
     queryKey: ['groups', 'user-groups-dialog'],
-    queryFn: () => api.listGroups({ limit: 100 }),
+    queryFn: () => api.listGroups({ limit: 100, sort: 'display_order', order: 'asc' }),
     enabled: !!groupsTarget,
   })
   const allGroups = groupsAll.data?.rows ?? []

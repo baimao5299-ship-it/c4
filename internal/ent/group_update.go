@@ -61,6 +61,47 @@ func (_u *GroupUpdate) SetNillableRemark(v *string) *GroupUpdate {
 	return _u
 }
 
+// SetCategory sets the "category" field.
+func (_u *GroupUpdate) SetCategory(v string) *GroupUpdate {
+	_u.mutation.SetCategory(v)
+	return _u
+}
+
+// SetNillableCategory sets the "category" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableCategory(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetCategory(*v)
+	}
+	return _u
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (_u *GroupUpdate) SetDisplayOrder(v int64) *GroupUpdate {
+	_u.mutation.ResetDisplayOrder()
+	_u.mutation.SetDisplayOrder(v)
+	return _u
+}
+
+// SetNillableDisplayOrder sets the "display_order" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableDisplayOrder(v *int64) *GroupUpdate {
+	if v != nil {
+		_u.SetDisplayOrder(*v)
+	}
+	return _u
+}
+
+// AddDisplayOrder adds value to the "display_order" field.
+func (_u *GroupUpdate) AddDisplayOrder(v int64) *GroupUpdate {
+	_u.mutation.AddDisplayOrder(v)
+	return _u
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (_u *GroupUpdate) ClearDisplayOrder() *GroupUpdate {
+	_u.mutation.ClearDisplayOrder()
+	return _u
+}
+
 // SetVisibility sets the "visibility" field.
 func (_u *GroupUpdate) SetVisibility(v group.Visibility) *GroupUpdate {
 	_u.mutation.SetVisibility(v)
@@ -411,6 +452,18 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Remark(); ok {
 		_spec.SetField(group.FieldRemark, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.Category(); ok {
+		_spec.SetField(group.FieldCategory, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DisplayOrder(); ok {
+		_spec.SetField(group.FieldDisplayOrder, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedDisplayOrder(); ok {
+		_spec.AddField(group.FieldDisplayOrder, field.TypeInt64, value)
+	}
+	if _u.mutation.DisplayOrderCleared() {
+		_spec.ClearField(group.FieldDisplayOrder, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
 	}
@@ -679,6 +732,47 @@ func (_u *GroupUpdateOne) SetNillableRemark(v *string) *GroupUpdateOne {
 	if v != nil {
 		_u.SetRemark(*v)
 	}
+	return _u
+}
+
+// SetCategory sets the "category" field.
+func (_u *GroupUpdateOne) SetCategory(v string) *GroupUpdateOne {
+	_u.mutation.SetCategory(v)
+	return _u
+}
+
+// SetNillableCategory sets the "category" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableCategory(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetCategory(*v)
+	}
+	return _u
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (_u *GroupUpdateOne) SetDisplayOrder(v int64) *GroupUpdateOne {
+	_u.mutation.ResetDisplayOrder()
+	_u.mutation.SetDisplayOrder(v)
+	return _u
+}
+
+// SetNillableDisplayOrder sets the "display_order" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableDisplayOrder(v *int64) *GroupUpdateOne {
+	if v != nil {
+		_u.SetDisplayOrder(*v)
+	}
+	return _u
+}
+
+// AddDisplayOrder adds value to the "display_order" field.
+func (_u *GroupUpdateOne) AddDisplayOrder(v int64) *GroupUpdateOne {
+	_u.mutation.AddDisplayOrder(v)
+	return _u
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (_u *GroupUpdateOne) ClearDisplayOrder() *GroupUpdateOne {
+	_u.mutation.ClearDisplayOrder()
 	return _u
 }
 
@@ -1061,6 +1155,18 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.Remark(); ok {
 		_spec.SetField(group.FieldRemark, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Category(); ok {
+		_spec.SetField(group.FieldCategory, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DisplayOrder(); ok {
+		_spec.SetField(group.FieldDisplayOrder, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedDisplayOrder(); ok {
+		_spec.AddField(group.FieldDisplayOrder, field.TypeInt64, value)
+	}
+	if _u.mutation.DisplayOrderCleared() {
+		_spec.ClearField(group.FieldDisplayOrder, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)

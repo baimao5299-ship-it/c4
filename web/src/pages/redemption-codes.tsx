@@ -184,7 +184,7 @@ export default function RedemptionCodes() {
   const [copiedAll, setCopiedAll] = useState(false) // 生成结果「复制全部」反馈
   const groupsQ = useQuery({
     queryKey: ['redemption-groups'],
-    queryFn: () => api.listGroups({ limit: 200, offset: 0, sort: 'id', order: 'asc' }),
+    queryFn: () => api.listGroups({ limit: 200, offset: 0, sort: 'display_order', order: 'asc' }),
     // Fetch once for both the scoped-code selector and the list labels. This
     // keeps existing activity codes readable before the generate dialog opens.
     staleTime: 60_000,

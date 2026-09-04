@@ -89,26 +89,30 @@ func init() {
 	groupDescRemark := groupFields[2].Descriptor()
 	// group.DefaultRemark holds the default value on creation for the remark field.
 	group.DefaultRemark = groupDescRemark.Default.(string)
+	// groupDescCategory is the schema descriptor for category field.
+	groupDescCategory := groupFields[3].Descriptor()
+	// group.DefaultCategory holds the default value on creation for the category field.
+	group.DefaultCategory = groupDescCategory.Default.(string)
 	// groupDescPriceMultiplier is the schema descriptor for price_multiplier field.
-	groupDescPriceMultiplier := groupFields[6].Descriptor()
+	groupDescPriceMultiplier := groupFields[8].Descriptor()
 	// group.DefaultPriceMultiplier holds the default value on creation for the price_multiplier field.
 	group.DefaultPriceMultiplier = groupDescPriceMultiplier.Default.(int)
 	// groupDescProtocolConvert is the schema descriptor for protocol_convert field.
-	groupDescProtocolConvert := groupFields[7].Descriptor()
+	groupDescProtocolConvert := groupFields[9].Descriptor()
 	// group.DefaultProtocolConvert holds the default value on creation for the protocol_convert field.
 	group.DefaultProtocolConvert = groupDescProtocolConvert.Default.([]string)
 	// groupDescAllowedModels is the schema descriptor for allowed_models field.
-	groupDescAllowedModels := groupFields[8].Descriptor()
+	groupDescAllowedModels := groupFields[10].Descriptor()
 	// group.DefaultAllowedModels holds the default value on creation for the allowed_models field.
 	group.DefaultAllowedModels = groupDescAllowedModels.Default.([]string)
 	// groupDescUpdatedAt is the schema descriptor for updated_at field.
-	groupDescUpdatedAt := groupFields[9].Descriptor()
+	groupDescUpdatedAt := groupFields[11].Descriptor()
 	// group.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	group.DefaultUpdatedAt = groupDescUpdatedAt.Default.(func() time.Time)
 	// group.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	group.UpdateDefaultUpdatedAt = groupDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// groupDescCreatedAt is the schema descriptor for created_at field.
-	groupDescCreatedAt := groupFields[11].Descriptor()
+	groupDescCreatedAt := groupFields[13].Descriptor()
 	// group.DefaultCreatedAt holds the default value on creation for the created_at field.
 	group.DefaultCreatedAt = groupDescCreatedAt.Default.(func() time.Time)
 	groupassignmentFields := schema.GroupAssignment{}.Fields()
@@ -280,69 +284,69 @@ func init() {
 	upstreamFields := schema.Upstream{}.Fields()
 	_ = upstreamFields
 	// upstreamDescModels is the schema descriptor for models field.
-	upstreamDescModels := upstreamFields[4].Descriptor()
+	upstreamDescModels := upstreamFields[5].Descriptor()
 	// upstream.DefaultModels holds the default value on creation for the models field.
 	upstream.DefaultModels = upstreamDescModels.Default.([]string)
 	// upstreamDescModelFormats is the schema descriptor for model_formats field.
-	upstreamDescModelFormats := upstreamFields[5].Descriptor()
+	upstreamDescModelFormats := upstreamFields[6].Descriptor()
 	// upstream.DefaultModelFormats holds the default value on creation for the model_formats field.
 	upstream.DefaultModelFormats = upstreamDescModelFormats.Default.(map[string][]domain.RequestFormat)
 	// upstreamDescMultiplierBp is the schema descriptor for multiplier_bp field.
-	upstreamDescMultiplierBp := upstreamFields[8].Descriptor()
+	upstreamDescMultiplierBp := upstreamFields[9].Descriptor()
 	// upstream.DefaultMultiplierBp holds the default value on creation for the multiplier_bp field.
 	upstream.DefaultMultiplierBp = upstreamDescMultiplierBp.Default.(int)
 	// upstreamDescEnabled is the schema descriptor for enabled field.
-	upstreamDescEnabled := upstreamFields[9].Descriptor()
+	upstreamDescEnabled := upstreamFields[10].Descriptor()
 	// upstream.DefaultEnabled holds the default value on creation for the enabled field.
 	upstream.DefaultEnabled = upstreamDescEnabled.Default.(bool)
 	// upstreamDescBalanceEndpoint is the schema descriptor for balance_endpoint field.
-	upstreamDescBalanceEndpoint := upstreamFields[11].Descriptor()
+	upstreamDescBalanceEndpoint := upstreamFields[12].Descriptor()
 	// upstream.DefaultBalanceEndpoint holds the default value on creation for the balance_endpoint field.
 	upstream.DefaultBalanceEndpoint = upstreamDescBalanceEndpoint.Default.(string)
 	// upstreamDescBalanceMethod is the schema descriptor for balance_method field.
-	upstreamDescBalanceMethod := upstreamFields[12].Descriptor()
+	upstreamDescBalanceMethod := upstreamFields[13].Descriptor()
 	// upstream.DefaultBalanceMethod holds the default value on creation for the balance_method field.
 	upstream.DefaultBalanceMethod = upstreamDescBalanceMethod.Default.(string)
 	// upstreamDescBalanceAuth is the schema descriptor for balance_auth field.
-	upstreamDescBalanceAuth := upstreamFields[13].Descriptor()
+	upstreamDescBalanceAuth := upstreamFields[14].Descriptor()
 	// upstream.DefaultBalanceAuth holds the default value on creation for the balance_auth field.
 	upstream.DefaultBalanceAuth = upstreamDescBalanceAuth.Default.(string)
 	// upstreamDescBalancePath is the schema descriptor for balance_path field.
-	upstreamDescBalancePath := upstreamFields[14].Descriptor()
+	upstreamDescBalancePath := upstreamFields[15].Descriptor()
 	// upstream.DefaultBalancePath holds the default value on creation for the balance_path field.
 	upstream.DefaultBalancePath = upstreamDescBalancePath.Default.(string)
 	// upstreamDescBalanceCurrencyPath is the schema descriptor for balance_currency_path field.
-	upstreamDescBalanceCurrencyPath := upstreamFields[15].Descriptor()
+	upstreamDescBalanceCurrencyPath := upstreamFields[16].Descriptor()
 	// upstream.DefaultBalanceCurrencyPath holds the default value on creation for the balance_currency_path field.
 	upstream.DefaultBalanceCurrencyPath = upstreamDescBalanceCurrencyPath.Default.(string)
 	// upstreamDescRequestCount is the schema descriptor for request_count field.
-	upstreamDescRequestCount := upstreamFields[20].Descriptor()
+	upstreamDescRequestCount := upstreamFields[21].Descriptor()
 	// upstream.DefaultRequestCount holds the default value on creation for the request_count field.
 	upstream.DefaultRequestCount = upstreamDescRequestCount.Default.(int64)
 	// upstreamDescSuccessCount is the schema descriptor for success_count field.
-	upstreamDescSuccessCount := upstreamFields[21].Descriptor()
+	upstreamDescSuccessCount := upstreamFields[22].Descriptor()
 	// upstream.DefaultSuccessCount holds the default value on creation for the success_count field.
 	upstream.DefaultSuccessCount = upstreamDescSuccessCount.Default.(int64)
 	// upstreamDescFailureCount is the schema descriptor for failure_count field.
-	upstreamDescFailureCount := upstreamFields[22].Descriptor()
+	upstreamDescFailureCount := upstreamFields[23].Descriptor()
 	// upstream.DefaultFailureCount holds the default value on creation for the failure_count field.
 	upstream.DefaultFailureCount = upstreamDescFailureCount.Default.(int64)
 	// upstreamDescLatencyTotalMs is the schema descriptor for latency_total_ms field.
-	upstreamDescLatencyTotalMs := upstreamFields[23].Descriptor()
+	upstreamDescLatencyTotalMs := upstreamFields[24].Descriptor()
 	// upstream.DefaultLatencyTotalMs holds the default value on creation for the latency_total_ms field.
 	upstream.DefaultLatencyTotalMs = upstreamDescLatencyTotalMs.Default.(int64)
 	// upstreamDescLatencyMaxMs is the schema descriptor for latency_max_ms field.
-	upstreamDescLatencyMaxMs := upstreamFields[24].Descriptor()
+	upstreamDescLatencyMaxMs := upstreamFields[25].Descriptor()
 	// upstream.DefaultLatencyMaxMs holds the default value on creation for the latency_max_ms field.
 	upstream.DefaultLatencyMaxMs = upstreamDescLatencyMaxMs.Default.(int64)
 	// upstreamDescUpdatedAt is the schema descriptor for updated_at field.
-	upstreamDescUpdatedAt := upstreamFields[29].Descriptor()
+	upstreamDescUpdatedAt := upstreamFields[30].Descriptor()
 	// upstream.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	upstream.DefaultUpdatedAt = upstreamDescUpdatedAt.Default.(func() time.Time)
 	// upstream.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	upstream.UpdateDefaultUpdatedAt = upstreamDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// upstreamDescCreatedAt is the schema descriptor for created_at field.
-	upstreamDescCreatedAt := upstreamFields[31].Descriptor()
+	upstreamDescCreatedAt := upstreamFields[32].Descriptor()
 	// upstream.DefaultCreatedAt holds the default value on creation for the created_at field.
 	upstream.DefaultCreatedAt = upstreamDescCreatedAt.Default.(func() time.Time)
 	usageentitystatFields := schema.UsageEntityStat{}.Fields()

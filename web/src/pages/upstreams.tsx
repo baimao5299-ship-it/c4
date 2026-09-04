@@ -13,6 +13,7 @@ import {
   Gauge,
   Info,
   ListChecks,
+  ListOrdered,
   Pencil,
   Plus,
   RefreshCw,
@@ -29,6 +30,7 @@ import {
   type UpstreamCreateInput,
   type UpstreamBatchValidationResponse,
   type UpstreamBatchValidationItem,
+  type UpstreamListResponse,
   type UpstreamRecord,
   type UpstreamStatus,
   type UpstreamValidationTaskResponse,
@@ -53,6 +55,7 @@ import { cn } from '@/lib/utils'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
 import { formatMultiplierValue, isStorableMultiplier, multiplierFromApi } from '@/lib/multiplier'
 import { ModelValidationProgress } from '@/components/model-validation-progress'
+import { SortableOrderPanel } from '@/components/sortable-list'
 
 type FormState = {
   name: string
@@ -354,6 +357,7 @@ export default function Upstreams() {
   const [pageSize, setPageSize] = useState(20)
   const [sort, setSort] = useState('')
   const [order, setOrder] = useState<SortOrder>('desc')
+  const [reorderOpen, setReorderOpen] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<UpstreamRecord | null>(null)
   const [deleting, setDeleting] = useState<UpstreamRecord | null>(null)
@@ -366,17 +370,18 @@ export default function Upstreams() {
   const [batchValidationResult, setBatchValidationResult] = useState<UpstreamBatchValidationResponse | null>(null)
   const [batchValidationProgress, setBatchValidationProgress] = useState<UpstreamValidationTaskResponse | null>(null)
 
+  const queryKey = ['upstreams', { name: debouncedName, status, page, pageSize, sort, order }] as const
   const query = useQuery({
-    queryKey: ['upstreams', { name: debouncedName, status, page, pageSize, sort, order }],
+    queryKey,
     queryFn: () => api.listUpstreams({
       name: debouncedName || undefined,
       status: status === 'all' ? undefined : status,
       limit: pageSize,
       offset: (page - 1) * pageSize,
-      sort: sort || undefined,
-      order,
+      sort: sort || 'display_order',
+      order: sort ? order : 'asc',
     }),
-    refetchInterval: 30_000,
+    refetchInterval: reorderOpen ? false : 30_000,
   })
 
   const rows = useMemo(() => query.data?.items ?? [], [query.data])
@@ -530,6 +535,20 @@ export default function Upstreams() {
     onError: error => {
       const message = errorMessage(error)
       if (message) toast.add({ title: t('upstreams.actionFailed', { message }), type: 'error' })
+    },
+  })
+
+  const reorder = useMutation({
+    mutationFn: (ids: number[]) => api.reorderUpstreams(ids),
+    onSuccess: async () => {
+      const result = await query.refetch()
+      if (result.isError) warnRefreshFailure()
+      else toast.add({ title: t('upstreams.reorderSaved'), type: 'success' })
+    },
+    onError: async error => {
+      await qc.invalidateQueries({ queryKey: ['upstreams'] })
+      const message = errorMessage(error)
+      toast.add({ title: message ? t('upstreams.actionFailed', { message }) : t('upstreams.reorderFailed'), type: 'error' })
     },
   })
 
@@ -701,6 +720,13 @@ export default function Upstreams() {
   const editingBusy = editing != null && upstreamBusy(editing.ID)
   const hasPendingAction = save.isPending || remove.isPending || toggle.isPending || probe.isPending || pendingModelIDs.size > 0 || pendingProbeIDs.size > 0 || pendingToggleIDs.size > 0
   const batchLocked = batchValidation.isPending
+  const canReorder = sort === '' && debouncedName === '' && status === 'all' && rows.length > 1 && !batchLocked && !hasPendingAction
+  const applyReorder = (ids: number[]) => {
+    if (!canReorder || reorder.isPending) return
+    const byID = new Map(rows.map(row => [row.ID, row]))
+    qc.setQueryData<UpstreamListResponse>(queryKey, current => current ? { ...current, items: ids.map(id => byID.get(id)).filter((row): row is UpstreamRecord => row != null) } : current)
+    reorder.mutate(ids)
+  }
 
   return (
     <motion.div className="space-y-6" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
@@ -709,10 +735,14 @@ export default function Upstreams() {
           <h1 className="text-2xl font-semibold tracking-tight">{t('upstreams.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('upstreams.subtitle')}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
           <Button variant="outline" onClick={() => { if (!batchLocked && !hasPendingAction) batchValidation.mutate() }} disabled={batchLocked || hasPendingAction}>
             <ListChecks className={cn(batchValidation.isPending && 'animate-pulse')} />
             <span>{batchValidation.isPending ? t('upstreams.validatingAll') : t('upstreams.validateAll')}</span>
+          </Button>
+          <Button variant="outline" onClick={() => setReorderOpen(open => !open)} disabled={!canReorder && !reorderOpen} aria-pressed={reorderOpen}>
+            <ListOrdered />
+            <span>{t(reorderOpen ? 'upstreams.closeReorder' : 'upstreams.reorder')}</span>
           </Button>
           <Button variant="outline" size="icon" title={t('common.refresh')} onClick={refresh} disabled={query.isFetching || batchLocked}>
             <RefreshCw className={cn(query.isFetching && 'animate-spin')} />
@@ -752,6 +782,17 @@ export default function Upstreams() {
           </SelectContent>
         </Select>
       </ListToolbar>
+
+      {reorderOpen && canReorder && (
+        <SortableOrderPanel
+          items={rows.map(row => ({ id: row.ID, label: row.Name, detail: row.BaseURL }))}
+          saving={reorder.isPending}
+          label={t('upstreams.reorderTitle')}
+          hint={t(reorder.isPending ? 'upstreams.reorderSaving' : 'upstreams.reorderHint')}
+          dragLabel={name => t('upstreams.dragLabel', { name })}
+          onReorder={applyReorder}
+        />
+      )}
 
       {query.isError && err && <p className="text-sm text-destructive">{t('common.loadFailed', { message: err })}</p>}
       {query.isLoading ? (

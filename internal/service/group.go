@@ -30,15 +30,19 @@ func (s *Service) CreateGroup(ctx context.Context, name string, visibility domai
 // source. The legacy CreateGroup entry point delegates here with accounts mode
 // so existing callers keep their behavior.
 func (s *Service) CreateGroupWithRouting(ctx context.Context, name string, visibility domain.GroupVisibility, priceMultiplier *int, protocolConverts []domain.ProtocolConvert, routingMode domain.GroupRoutingMode, allowedModels []string) (*domain.Group, error) {
-	return s.CreateGroupWithRoutingAndRemark(ctx, name, "", visibility, priceMultiplier, protocolConverts, routingMode, allowedModels)
+	return s.CreateGroupWithRoutingAndRemark(ctx, name, "", "", visibility, priceMultiplier, protocolConverts, routingMode, allowedModels)
 }
 
-func (s *Service) CreateGroupWithRoutingAndRemark(ctx context.Context, name, remark string, visibility domain.GroupVisibility, priceMultiplier *int, protocolConverts []domain.ProtocolConvert, routingMode domain.GroupRoutingMode, allowedModels []string) (*domain.Group, error) {
+func (s *Service) CreateGroupWithRoutingAndRemark(ctx context.Context, name, remark, category string, visibility domain.GroupVisibility, priceMultiplier *int, protocolConverts []domain.ProtocolConvert, routingMode domain.GroupRoutingMode, allowedModels []string) (*domain.Group, error) {
 	g, err := normalizeGroupInput(name, visibility, priceMultiplier, protocolConverts, routingMode, allowedModels)
 	if err != nil {
 		return nil, err
 	}
 	g.Remark, err = normalizeGroupRemark(remark)
+	if err != nil {
+		return nil, err
+	}
+	g.Category, err = normalizeGroupCategory(category)
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +107,14 @@ func normalizeGroupRemark(remark string) (string, error) {
 	return remark, nil
 }
 
+func normalizeGroupCategory(category string) (string, error) {
+	category = strings.TrimSpace(category)
+	if len([]rune(category)) > 50 {
+		return "", ErrInvalidInput
+	}
+	return category, nil
+}
+
 func (s *Service) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
 	g, err := s.store.GetGroup(ctx, id)
 	if err != nil {
@@ -132,6 +144,38 @@ func (s *Service) ListGroups(ctx context.Context, q repository.ListQuery) ([]*do
 	return s.store.ListGroups(ctx, q)
 }
 
+type groupOrderStore interface {
+	ReorderGroups(context.Context, []int64) error
+}
+
+func validateDisplayOrderIDs(ids []int64) error {
+	if len(ids) < 2 || len(ids) > 200 {
+		return ErrInvalidInput
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return ErrInvalidInput
+		}
+		if _, exists := seen[id]; exists {
+			return ErrInvalidInput
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+func (s *Service) ReorderGroups(ctx context.Context, ids []int64) error {
+	ordered, ok := s.store.(groupOrderStore)
+	if !ok {
+		return fmt.Errorf("%w: group ordering is not configured", ErrInvalidInput)
+	}
+	if err := validateDisplayOrderIDs(ids); err != nil {
+		return err
+	}
+	return mapRepoErr(ordered.ReorderGroups(ctx, append([]int64(nil), ids...)))
+}
+
 func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	if g == nil {
 		return nil, ErrInvalidInput
@@ -148,6 +192,10 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 		return nil, ErrNotFound
 	}
 	remark, err := normalizeGroupRemark(g.Remark)
+	if err != nil {
+		return nil, err
+	}
+	category, err := normalizeGroupCategory(g.Category)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +225,10 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	cp := *g
 	cp.Name = name
 	cp.Remark = remark
+	cp.Category = category
+	if cp.DisplayOrder == nil {
+		cp.DisplayOrder = current.DisplayOrder
+	}
 	cp.ProtocolConverts = converts
 	cp.RoutingMode = g.EffectiveRoutingMode()
 	if !cp.RoutingMode.Valid() {

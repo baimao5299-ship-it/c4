@@ -93,12 +93,13 @@ func (r *GroupAssignmentRepo) ListByGroup(ctx context.Context, groupID int64) ([
 // ListGroupsForUser 用户可选组：public 全部 + 已授予的 private（/api/user/groups
 // 只读列表；软删除：已删组不进可选列表）。
 func (r *GroupAssignmentRepo) ListGroupsForUser(ctx context.Context, userID int64) ([]*domain.Group, error) {
+	primary, tie := displayOrderOptions(group.FieldDisplayOrder, group.FieldID, "asc")
 	rows, err := r.client.Group.Query().
 		Where(group.DeletedAtIsNil(), group.Or(
 			group.VisibilityEQ(group.VisibilityPublic),
 			group.HasAssignmentsWith(groupassignment.UserIDEQ(userID)),
 		)).
-		Order(ent.Asc(group.FieldID)).
+		Order(primary, tie).
 		All(ctx)
 	if err != nil {
 		return nil, err

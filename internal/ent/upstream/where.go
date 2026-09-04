@@ -65,6 +65,11 @@ func BaseURL(v string) predicate.Upstream {
 	return predicate.Upstream(sql.FieldEQ(FieldBaseURL, v))
 }
 
+// DisplayOrder applies equality check predicate on the "display_order" field. It's identical to DisplayOrderEQ.
+func DisplayOrder(v int64) predicate.Upstream {
+	return predicate.Upstream(sql.FieldEQ(FieldDisplayOrder, v))
+}
+
 // UpstreamKey applies equality check predicate on the "upstream_key" field. It's identical to UpstreamKeyEQ.
 func UpstreamKey(v string) predicate.Upstream {
 	return predicate.Upstream(sql.FieldEQ(FieldUpstreamKey, v))
@@ -323,6 +328,56 @@ func BaseURLEqualFold(v string) predicate.Upstream {
 // BaseURLContainsFold applies the ContainsFold predicate on the "base_url" field.
 func BaseURLContainsFold(v string) predicate.Upstream {
 	return predicate.Upstream(sql.FieldContainsFold(FieldBaseURL, v))
+}
+
+// DisplayOrderEQ applies the EQ predicate on the "display_order" field.
+func DisplayOrderEQ(v int64) predicate.Upstream {
+	return predicate.Upstream(sql.FieldEQ(FieldDisplayOrder, v))
+}
+
+// DisplayOrderNEQ applies the NEQ predicate on the "display_order" field.
+func DisplayOrderNEQ(v int64) predicate.Upstream {
+	return predicate.Upstream(sql.FieldNEQ(FieldDisplayOrder, v))
+}
+
+// DisplayOrderIn applies the In predicate on the "display_order" field.
+func DisplayOrderIn(vs ...int64) predicate.Upstream {
+	return predicate.Upstream(sql.FieldIn(FieldDisplayOrder, vs...))
+}
+
+// DisplayOrderNotIn applies the NotIn predicate on the "display_order" field.
+func DisplayOrderNotIn(vs ...int64) predicate.Upstream {
+	return predicate.Upstream(sql.FieldNotIn(FieldDisplayOrder, vs...))
+}
+
+// DisplayOrderGT applies the GT predicate on the "display_order" field.
+func DisplayOrderGT(v int64) predicate.Upstream {
+	return predicate.Upstream(sql.FieldGT(FieldDisplayOrder, v))
+}
+
+// DisplayOrderGTE applies the GTE predicate on the "display_order" field.
+func DisplayOrderGTE(v int64) predicate.Upstream {
+	return predicate.Upstream(sql.FieldGTE(FieldDisplayOrder, v))
+}
+
+// DisplayOrderLT applies the LT predicate on the "display_order" field.
+func DisplayOrderLT(v int64) predicate.Upstream {
+	return predicate.Upstream(sql.FieldLT(FieldDisplayOrder, v))
+}
+
+// DisplayOrderLTE applies the LTE predicate on the "display_order" field.
+func DisplayOrderLTE(v int64) predicate.Upstream {
+	return predicate.Upstream(sql.FieldLTE(FieldDisplayOrder, v))
+}
+
+// DisplayOrderIsNil applies the IsNil predicate on the "display_order" field.
+func DisplayOrderIsNil() predicate.Upstream {
+	return predicate.Upstream(sql.FieldIsNull(FieldDisplayOrder))
+}
+
+// DisplayOrderNotNil applies the NotNil predicate on the "display_order" field.
+func DisplayOrderNotNil() predicate.Upstream {
+	return predicate.Upstream(sql.FieldNotNull(FieldDisplayOrder))
 }
 
 // UpstreamKeyEQ applies the EQ predicate on the "upstream_key" field.

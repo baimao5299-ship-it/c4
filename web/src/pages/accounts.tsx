@@ -352,12 +352,12 @@ export default function Accounts() {
   })
   const templatesQ = useQuery({ queryKey: ['templates'], queryFn: () => api.listTemplates({ limit: 100 }) })
   const templates = templatesQ.data?.rows ?? []
-  const groupsQ = useQuery({ queryKey: ['groups'], queryFn: () => api.listGroups({ limit: 100 }) })
+  const groupsQ = useQuery({ queryKey: ['groups'], queryFn: () => api.listGroups({ limit: 100, sort: 'display_order', order: 'asc' }) })
   const groups = groupsQ.data?.rows ?? []
   // Account binding options come from the same upstream inventory page. Load
   // disabled entries too so an existing binding can be edited without being
   // silently cleared; the scheduler still excludes disabled entries.
-  const upstreamsQ = useQuery({ queryKey: ['upstreams', 'account-options'], queryFn: () => api.listUpstreams({ limit: 200 }) })
+  const upstreamsQ = useQuery({ queryKey: ['upstreams', 'account-options'], queryFn: () => api.listUpstreams({ limit: 200, sort: 'display_order', order: 'asc' }) })
   const upstreams = useMemo(() => upstreamsQ.data?.items ?? [], [upstreamsQ.data?.items])
   const upstreamByID = useMemo(() => new Map(upstreams.map(u => [u.ID, u])), [upstreams])
   const rows = useMemo(() => data?.rows ?? [], [data?.rows])

@@ -52,6 +52,7 @@ func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	q := r.client.Group.Create().
 		SetName(g.Name).
 		SetRemark(g.Remark).
+		SetCategory(g.Category).
 		SetVisibility(group.Visibility(g.Visibility)).
 		SetPublicStatus(status).
 		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).
@@ -88,9 +89,15 @@ func (r *GroupRepo) ListGroups(ctx context.Context, q ListQuery) ([]*domain.Grou
 	if err != nil {
 		return nil, 0, err
 	}
-	order, err := q.sortOrder(groupSortFields)
-	if err != nil {
-		return nil, 0, err
+	if q.Sort == "display_order" {
+		primary, tie := displayOrderOptions(group.FieldDisplayOrder, group.FieldID, q.Order)
+		pred = pred.Order(primary, tie)
+	} else {
+		order, err := q.sortOrder(groupSortFields)
+		if err != nil {
+			return nil, 0, err
+		}
+		pred = pred.Order(order)
 	}
 	if q.Limit <= 0 {
 		q.Limit = 20
@@ -98,7 +105,7 @@ func (r *GroupRepo) ListGroups(ctx context.Context, q ListQuery) ([]*domain.Grou
 	if q.Offset < 0 {
 		q.Offset = 0
 	}
-	rows, err := pred.Order(order).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	rows, err := pred.Offset(q.Offset).Limit(q.Limit).All(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -120,6 +127,7 @@ func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	row, err := r.client.Group.UpdateOneID(g.ID).Where(group.DeletedAtIsNil()).
 		SetName(g.Name).
 		SetRemark(g.Remark).
+		SetCategory(g.Category).
 		SetVisibility(group.Visibility(g.Visibility)).
 		SetPublicStatus(status).
 		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).

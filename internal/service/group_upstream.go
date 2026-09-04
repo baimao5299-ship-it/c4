@@ -129,6 +129,9 @@ func (s *Service) CreateUpstreamGroup(ctx context.Context, group *domain.Group, 
 	if groupCopy.Remark, err = normalizeGroupRemark(groupCopy.Remark); err != nil {
 		return nil, err
 	}
+	if groupCopy.Category, err = normalizeGroupCategory(groupCopy.Category); err != nil {
+		return nil, err
+	}
 	groupCopy.PublicStatus = publicStatus
 	groupCopy.ProtocolConverts = converts
 	groupCopy.AllowedModels = allowed
@@ -151,6 +154,13 @@ func (s *Service) UpdateGroupWithUpstreams(ctx context.Context, group *domain.Gr
 	if group == nil || group.ID <= 0 {
 		return nil, ErrInvalidInput
 	}
+	current, err := s.store.GetGroup(ctx, group.ID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if current == nil || current.DeletedAt != nil {
+		return nil, ErrNotFound
+	}
 	normalizedGroup, err := normalizeGroupInput(group.Name, group.Visibility, &group.PriceMultiplier, group.ProtocolConverts, group.EffectiveRoutingMode(), group.AllowedModels)
 	if err != nil {
 		return nil, err
@@ -159,6 +169,13 @@ func (s *Service) UpdateGroupWithUpstreams(ctx context.Context, group *domain.Gr
 	if normalizedGroup.Remark, err = normalizeGroupRemark(group.Remark); err != nil {
 		return nil, err
 	}
+	if normalizedGroup.Category, err = normalizeGroupCategory(group.Category); err != nil {
+		return nil, err
+	}
+	// Presentation order is owned exclusively by the reorder endpoint. Keeping
+	// it out of this stale form snapshot prevents a member edit from undoing a
+	// drag that completed while the form was open.
+	normalizedGroup.DisplayOrder = nil
 	publicStatus := group.PublicStatus
 	if publicStatus == "" {
 		publicStatus = domain.GroupPublicStatusAvailable

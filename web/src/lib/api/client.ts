@@ -195,6 +195,7 @@ export class ApiClient {
   putTemplateExt = (id: number, b: components['schemas']['TemplateExt']) => this.request<components['schemas']['TemplateExt']>(`/templates/${id}/ext`, { method: 'PUT', body: JSON.stringify(b) })
   // —— 独立上游清单（成本/稳定性管理面） ——
   listUpstreams = (p?: UpstreamListParams) => this.request<UpstreamListResponse>('/upstreams', { params: toQuery(p) })
+  reorderUpstreams = (ids: number[]) => this.request<components['schemas']['ReorderResponse']>('/upstreams/reorder', { method: 'POST', body: JSON.stringify({ ids }) })
   createUpstream = (b: UpstreamCreateInput) => this.request<UpstreamRecord>('/upstreams', { method: 'POST', body: JSON.stringify(b) })
   updateUpstream = (id: number, b: UpstreamCreateInput) => this.request<UpstreamRecord>(`/upstreams/${id}`, { method: 'PUT', body: JSON.stringify(b) })
   updateUpstreamStatus = (id: number, enabled: boolean) => this.request<UpstreamRecord>(`/upstreams/${id}/status`, { method: 'PATCH', body: JSON.stringify({ enabled }) })
@@ -228,6 +229,7 @@ export class ApiClient {
   resetAccountsCooldown = (ids: number[]) => this.request<components['schemas']['BatchResetCooldownResponse']>('/accounts/batch-reset-cooldown', { method: 'POST', body: JSON.stringify({ ids }) })
   // —— 分组 ——
   listGroups = (p?: GroupListParams) => this.request<components['schemas']['GroupListResponse']>('/groups', { params: toQuery(p) })
+  reorderGroups = (ids: number[]) => this.request<components['schemas']['ReorderResponse']>('/groups/reorder', { method: 'POST', body: JSON.stringify({ ids }) })
   createGroup = (b: components['schemas']['GroupCreate']) => this.request<components['schemas']['Group']>('/groups', { method: 'POST', body: JSON.stringify(b) })
   updateGroup = (id: number, b: components['schemas']['GroupCreate']) => this.request<components['schemas']['Group']>(`/groups/${id}`, { method: 'PUT', body: JSON.stringify(b) })
   getGroupUpstreams = (id: number) => this.request<components['schemas']['GroupUpstreamsResponse']>(`/groups/${id}/upstreams`)

@@ -77,7 +77,7 @@ var (
 	}
 	groupSortFields = map[string]string{
 		"id": group.FieldID, "name": group.FieldName, "created_at": group.FieldCreatedAt,
-		"updated_at": group.FieldUpdatedAt,
+		"updated_at": group.FieldUpdatedAt, "display_order": group.FieldDisplayOrder,
 	}
 	userSortFields = map[string]string{
 		"id": user.FieldID, "email": user.FieldEmail, "role": user.FieldRole,
@@ -117,6 +117,6 @@ var (
 		"id": upstream.FieldID, "name": upstream.FieldName, "base_url": upstream.FieldBaseURL, "multiplier_bp": upstream.FieldMultiplierBp,
 		"request_count": upstream.FieldRequestCount, "success_count": upstream.FieldSuccessCount,
 		"failure_count": upstream.FieldFailureCount, "last_checked_at": upstream.FieldLastCheckedAt,
-		"created_at": upstream.FieldCreatedAt, "updated_at": upstream.FieldUpdatedAt,
+		"created_at": upstream.FieldCreatedAt, "updated_at": upstream.FieldUpdatedAt, "display_order": upstream.FieldDisplayOrder,
 	}
 )

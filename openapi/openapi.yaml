@@ -423,7 +423,7 @@ paths:
         - { name: offset, in: query, schema: { type: integer, default: 0 } }
         - { name: name, in: query, schema: { type: string } }
         - { name: status, in: query, schema: { type: string, enum: [active, disabled] } }
-        - { name: sort, in: query, schema: { type: string, enum: [id, name, base_url, multiplier_bp, request_count, success_count, failure_count, last_checked_at, created_at, updated_at] } }
+        - { name: sort, in: query, schema: { type: string, enum: [id, name, base_url, multiplier_bp, request_count, success_count, failure_count, last_checked_at, created_at, updated_at, display_order] } }
         - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
       responses:
         '200':
@@ -448,6 +448,24 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Upstream' }
+        default:
+          $ref: '#/components/responses/Error'
+  /upstreams/reorder:
+    post:
+      operationId: PostUpstreamsReorder
+      tags: [upstreams]
+      summary: 按管理端拖动结果调整上游展示顺序，不改变调度策略
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderRequest' }
+      responses:
+        '200':
+          description: 已保存的记录数
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReorderResponse' }
         default:
           $ref: '#/components/responses/Error'
   /upstreams/{id}:
@@ -671,7 +689,7 @@ paths:
         - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 200, description: 每页条数（上限 200，超限裁剪到 200） } }
         - { name: offset, in: query, schema: { type: integer, default: 0 } }
         - { name: name, in: query, schema: { type: string } }
-        - { name: sort, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [id, name, created_at, updated_at, display_order] } }
         - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
       responses:
         '200':
@@ -679,6 +697,24 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GroupListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /groups/reorder:
+    post:
+      operationId: PostGroupsReorder
+      tags: [groups]
+      summary: 按管理端拖动结果调整分组展示顺序，不改变路由优先级
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderRequest' }
+      responses:
+        '200':
+          description: 已保存的记录数
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReorderResponse' }
         default:
           $ref: '#/components/responses/Error'
   /groups/batch-delete:
@@ -2568,11 +2604,12 @@ components:
           items: { $ref: '#/components/schemas/UserChannelMetric' }
     UserChannelMetric:
       type: object
-      required: [GroupID, Name, Remark, AllowedModels, ModelPrices, PriceMultiplier, Status]
+      required: [GroupID, Name, Remark, Category, AllowedModels, ModelPrices, PriceMultiplier, Status]
       properties:
         GroupID: { type: integer, format: int64 }
         Name: { type: string }
         Remark: { type: string, description: 管理员给用户看的分组备注 }
+        Category: { type: string, description: 管理员设置的渠道分类；空字符串表示未分类 }
         AllowedModels:
           type: array
           items: { type: string }
@@ -2795,6 +2832,7 @@ components:
       properties:
         name: { type: string }
         remark: { type: string, maxLength: 500, description: 管理员给用户看的分组备注 }
+        category: { type: string, maxLength: 50, description: 用户渠道监控中的分类名称；留空归入其他 }
         visibility: { $ref: '#/components/schemas/GroupVisibility' }
         public_status: { $ref: '#/components/schemas/GroupPublicStatus' }
         routing_mode: { $ref: '#/components/schemas/GroupRoutingMode' }
@@ -2925,6 +2963,7 @@ components:
         ID: { type: integer, format: int64 }
         Name: { type: string }
         Remark: { type: string, description: 管理员给用户看的分组备注 }
+        Category: { type: string, description: 用户渠道监控中的分类名称；空字符串表示未分类 }
         Visibility: { $ref: '#/components/schemas/GroupVisibility' }
         PublicStatus: { $ref: '#/components/schemas/GroupPublicStatus' }
         RoutingMode: { $ref: '#/components/schemas/GroupRoutingMode' }
@@ -2939,6 +2978,23 @@ components:
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
         DeletedAt: { type: string, format: date-time, nullable: true, description: 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项） }
+    ReorderRequest:
+      type: object
+      additionalProperties: false
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          minItems: 2
+          maxItems: 200
+          uniqueItems: true
+          items: { type: integer, format: int64, minimum: 1 }
+          description: 当前页面按拖动后的顺序排列的完整 ID 列表
+    ReorderResponse:
+      type: object
+      required: [reordered]
+      properties:
+        reordered: { type: integer, minimum: 0 }
     GroupRoutingMode:
       type: string
       enum: [accounts, upstreams]

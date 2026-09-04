@@ -21,21 +21,22 @@ func (f *channelStatsFake) ScanPublicChannelStats(context.Context, []int64, time
 
 func TestUserChannelMetricsOnlyPublicAndComputesHealth(t *testing.T) {
 	now := time.Now().UTC()
+	first, second, third := int64(1), int64(2), int64(3)
 	store := &channelStatsFake{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{
 		1: {GroupID: 1, RequestCount: 20, ErrorCount: 1, LatencyTotalMS: 1800, LatencySampleCount: 2, LastCalledAt: ptrTime(now)},
 		2: {GroupID: 2, RequestCount: 10, ErrorCount: 8, LatencyTotalMS: 40000, LatencySampleCount: 10, LastCalledAt: ptrTime(now.Add(-time.Minute))},
 	}}
-	store.groups[1] = &domain.Group{ID: 1, Name: "public", Visibility: domain.GroupVisibilityPublic, AllowedModels: []string{"gpt-5"}}
+	store.groups[1] = &domain.Group{ID: 1, Name: "public", DisplayOrder: &first, Visibility: domain.GroupVisibilityPublic, AllowedModels: []string{"gpt-5"}}
 	store.groups[2] = &domain.Group{ID: 2, Name: "private", Visibility: domain.GroupVisibilityPrivate, AllowedModels: []string{"gpt-5"}}
-	store.groups[3] = &domain.Group{ID: 3, Name: "degraded", Visibility: domain.GroupVisibilityPublic, AllowedModels: []string{"gpt-5"}}
-	store.groups[4] = &domain.Group{ID: 4, Name: "empty", Visibility: domain.GroupVisibilityPublic, AllowedModels: []string{"gpt-5"}}
+	store.groups[3] = &domain.Group{ID: 3, Name: "degraded", DisplayOrder: &second, Visibility: domain.GroupVisibilityPublic, AllowedModels: []string{"gpt-5"}}
+	store.groups[4] = &domain.Group{ID: 4, Name: "empty", DisplayOrder: &third, Visibility: domain.GroupVisibilityPublic, AllowedModels: []string{"gpt-5"}}
 	store.stats[3] = &domain.PublicChannelStat{GroupID: 3, RequestCount: 10, ErrorCount: 8, LatencyTotalMS: 40000, LatencySampleCount: 10, LastCalledAt: ptrTime(now.Add(-time.Minute))}
 
 	svc := &Service{store: store}
 	rows, err := svc.UserChannelMetrics(context.Background(), 42, now.Add(-24*time.Hour), now)
 	require.NoError(t, err)
 	require.Len(t, rows, 3)
-	require.Equal(t, int64(1), rows[0].Group.ID, "most recently called public group first")
+	require.Equal(t, int64(1), rows[0].Group.ID, "administrator display order wins over recent activity")
 	require.Equal(t, "stable", rows[0].Status)
 	require.Equal(t, int64(900), rows[0].AverageLatencyMS)
 	require.InDelta(t, 95, rows[0].SuccessRate, 0.001)

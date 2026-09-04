@@ -325,6 +325,16 @@ export default function UserModels({ compact = false }: { compact?: boolean }) {
   const channelsQ = useQuery({ queryKey: ['user', 'channel-monitor', range], queryFn: () => userApi.getChannelMonitor(range), refetchInterval: 30_000 })
   const metrics = channelsQ.data?.rows ?? []
   const visible = compact ? metrics.slice(0, 6) : metrics
+  const categories = useMemo(() => {
+    const grouped = new Map<string, ChannelMetric[]>()
+    for (const metric of visible) {
+      const category = metric.Category?.trim() || t('user.models.uncategorized')
+      const rows = grouped.get(category) ?? []
+      rows.push(metric)
+      grouped.set(category, rows)
+    }
+    return Array.from(grouped.entries())
+  }, [t, visible])
   const loading = channelsQ.isLoading
   const refreshing = channelsQ.isFetching
   const hasData = channelsQ.data != null
@@ -333,7 +343,7 @@ export default function UserModels({ compact = false }: { compact?: boolean }) {
     <section id={compact ? undefined : 'channel-monitor'} className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3"><div><div className="flex items-center gap-2"><Sparkles className="size-5 text-primary" /><h2 className={compact ? 'text-lg font-semibold' : 'text-2xl font-semibold tracking-tight'}>{t('user.models.title')}</h2></div><p className="mt-1 text-sm text-muted-foreground">{t('user.models.subtitle')}</p>{hasData && stale && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{t('user.models.staleData')}</p>}</div><div className="flex items-center gap-2">{!compact && <Button variant="outline" size="sm" onClick={() => { void channelsQ.refetch() }} disabled={refreshing}><RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />{t('user.models.refresh')}</Button>}{compact && <Button variant="ghost" size="sm" render={<Link to="/user/models" />}>{t('user.models.viewAll')}<ArrowRight className="size-4" /></Button>}</div></div>
       {!compact && !loading && !channelsQ.isError && <div className="rounded-xl border border-border/70 bg-card/50 px-4 py-3 text-sm text-muted-foreground">{t('user.models.publicCatalogHint')}</div>}
-      {channelsQ.isError && !hasData ? <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{t('user.models.loadFailed')}</p> : loading ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{Array.from({ length: compact ? 3 : 6 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-[14px]" />)}</div> : visible.length === 0 ? <Card><CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground"><Activity className="size-10" /><p className="font-medium">{t('user.models.emptyTitle')}</p><p className="max-w-md text-sm">{t('user.models.emptyDesc')}</p></CardContent></Card> : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{visible.map(metric => <ChannelCard key={metric.GroupID} metric={metric} t={t} />)}</div>}
+      {channelsQ.isError && !hasData ? <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{t('user.models.loadFailed')}</p> : loading ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{Array.from({ length: compact ? 3 : 6 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-[14px]" />)}</div> : visible.length === 0 ? <Card><CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground"><Activity className="size-10" /><p className="font-medium">{t('user.models.emptyTitle')}</p><p className="max-w-md text-sm">{t('user.models.emptyDesc')}</p></CardContent></Card> : <div className="space-y-7">{categories.map(([category, rows]) => <div key={category} className="space-y-3"><div className="flex items-center gap-3"><h3 className="text-base font-semibold">{category}</h3><span className="text-xs tabular-nums text-muted-foreground">{t('user.models.categoryCount', { count: rows.length })}</span><div className="h-px min-w-4 flex-1 bg-border" /></div><div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{rows.map(metric => <ChannelCard key={metric.GroupID} metric={metric} t={t} />)}</div></div>)}</div>}
       {!compact && <p className="text-xs text-muted-foreground">{t('user.models.disclaimer')}</p>}
     </section>
   )

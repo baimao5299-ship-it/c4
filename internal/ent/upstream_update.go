@@ -60,6 +60,33 @@ func (_u *UpstreamUpdate) SetNillableBaseURL(v *string) *UpstreamUpdate {
 	return _u
 }
 
+// SetDisplayOrder sets the "display_order" field.
+func (_u *UpstreamUpdate) SetDisplayOrder(v int64) *UpstreamUpdate {
+	_u.mutation.ResetDisplayOrder()
+	_u.mutation.SetDisplayOrder(v)
+	return _u
+}
+
+// SetNillableDisplayOrder sets the "display_order" field if the given value is not nil.
+func (_u *UpstreamUpdate) SetNillableDisplayOrder(v *int64) *UpstreamUpdate {
+	if v != nil {
+		_u.SetDisplayOrder(*v)
+	}
+	return _u
+}
+
+// AddDisplayOrder adds value to the "display_order" field.
+func (_u *UpstreamUpdate) AddDisplayOrder(v int64) *UpstreamUpdate {
+	_u.mutation.AddDisplayOrder(v)
+	return _u
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (_u *UpstreamUpdate) ClearDisplayOrder() *UpstreamUpdate {
+	_u.mutation.ClearDisplayOrder()
+	return _u
+}
+
 // SetUpstreamKey sets the "upstream_key" field.
 func (_u *UpstreamUpdate) SetUpstreamKey(v string) *UpstreamUpdate {
 	_u.mutation.SetUpstreamKey(v)
@@ -703,6 +730,15 @@ func (_u *UpstreamUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.BaseURL(); ok {
 		_spec.SetField(upstream.FieldBaseURL, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.DisplayOrder(); ok {
+		_spec.SetField(upstream.FieldDisplayOrder, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedDisplayOrder(); ok {
+		_spec.AddField(upstream.FieldDisplayOrder, field.TypeInt64, value)
+	}
+	if _u.mutation.DisplayOrderCleared() {
+		_spec.ClearField(upstream.FieldDisplayOrder, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.UpstreamKey(); ok {
 		_spec.SetField(upstream.FieldUpstreamKey, field.TypeString, value)
 	}
@@ -984,6 +1020,33 @@ func (_u *UpstreamUpdateOne) SetNillableBaseURL(v *string) *UpstreamUpdateOne {
 	if v != nil {
 		_u.SetBaseURL(*v)
 	}
+	return _u
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (_u *UpstreamUpdateOne) SetDisplayOrder(v int64) *UpstreamUpdateOne {
+	_u.mutation.ResetDisplayOrder()
+	_u.mutation.SetDisplayOrder(v)
+	return _u
+}
+
+// SetNillableDisplayOrder sets the "display_order" field if the given value is not nil.
+func (_u *UpstreamUpdateOne) SetNillableDisplayOrder(v *int64) *UpstreamUpdateOne {
+	if v != nil {
+		_u.SetDisplayOrder(*v)
+	}
+	return _u
+}
+
+// AddDisplayOrder adds value to the "display_order" field.
+func (_u *UpstreamUpdateOne) AddDisplayOrder(v int64) *UpstreamUpdateOne {
+	_u.mutation.AddDisplayOrder(v)
+	return _u
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (_u *UpstreamUpdateOne) ClearDisplayOrder() *UpstreamUpdateOne {
+	_u.mutation.ClearDisplayOrder()
 	return _u
 }
 
@@ -1659,6 +1722,15 @@ func (_u *UpstreamUpdateOne) sqlSave(ctx context.Context) (_node *Upstream, err 
 	}
 	if value, ok := _u.mutation.BaseURL(); ok {
 		_spec.SetField(upstream.FieldBaseURL, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DisplayOrder(); ok {
+		_spec.SetField(upstream.FieldDisplayOrder, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedDisplayOrder(); ok {
+		_spec.AddField(upstream.FieldDisplayOrder, field.TypeInt64, value)
+	}
+	if _u.mutation.DisplayOrderCleared() {
+		_spec.ClearField(upstream.FieldDisplayOrder, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.UpstreamKey(); ok {
 		_spec.SetField(upstream.FieldUpstreamKey, field.TypeString, value)

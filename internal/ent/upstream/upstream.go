@@ -20,6 +20,8 @@ const (
 	FieldName = "name"
 	// FieldBaseURL holds the string denoting the base_url field in the database.
 	FieldBaseURL = "base_url"
+	// FieldDisplayOrder holds the string denoting the display_order field in the database.
+	FieldDisplayOrder = "display_order"
 	// FieldUpstreamKey holds the string denoting the upstream_key field in the database.
 	FieldUpstreamKey = "upstream_key"
 	// FieldModels holds the string denoting the models field in the database.
@@ -105,6 +107,7 @@ var Columns = []string{
 	FieldID,
 	FieldName,
 	FieldBaseURL,
+	FieldDisplayOrder,
 	FieldUpstreamKey,
 	FieldModels,
 	FieldModelFormats,
@@ -227,6 +230,11 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByBaseURL orders the results by the base_url field.
 func ByBaseURL(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBaseURL, opts...).ToFunc()
+}
+
+// ByDisplayOrder orders the results by the display_order field.
+func ByDisplayOrder(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDisplayOrder, opts...).ToFunc()
 }
 
 // ByUpstreamKey orders the results by the upstream_key field.

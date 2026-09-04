@@ -38,6 +38,19 @@ func (h *AdminAPI) GetUpstreams(w http.ResponseWriter, r *http.Request, params G
 	httpface.WriteJSON(w, http.StatusOK, UpstreamListResponse{Total: total, Items: items})
 }
 
+func (h *AdminAPI) PostUpstreamsReorder(w http.ResponseWriter, r *http.Request) {
+	var in ReorderRequest
+	if err := decode(r, &in); err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	if err := h.svc.ReorderUpstreams(r.Context(), in.Ids); err != nil {
+		httpface.WriteServiceErr(w, err)
+		return
+	}
+	httpface.WriteJSON(w, http.StatusOK, ReorderResponse{Reordered: len(in.Ids)})
+}
+
 func (h *AdminAPI) PostUpstreams(w http.ResponseWriter, r *http.Request) {
 	var in UpstreamCreate
 	if err := decode(r, &in); err != nil {
@@ -252,6 +265,9 @@ func upstreamFromBody(in UpstreamCreate, current *domain.Upstream) *domain.Upstr
 		BalancePath:         balancePath,
 		BalanceCurrencyPath: balanceCurrencyPath,
 		BalanceStatus:       domain.UpstreamBalanceUnconfigured,
+	}
+	if current != nil {
+		u.DisplayOrder = current.DisplayOrder
 	}
 	if current != nil {
 		u.BalanceStatus = current.BalanceStatus

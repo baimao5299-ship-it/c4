@@ -27,9 +27,10 @@ import (
 // does not participate in request routing; accounts/templates remain the hot
 // path source of truth until an operator explicitly binds them there.
 type UpstreamRepo struct {
-	client *ent.Client
-	driver dialect.Driver
-	pool   *pgxpool.Pool
+	client   *ent.Client
+	driver   dialect.Driver
+	pool     *pgxpool.Pool
+	rowLocks bool
 }
 
 // ErrUpstreamValidationLockUnavailable marks the intentionally supported
@@ -167,9 +168,15 @@ func (r *UpstreamRepo) ListUpstreams(ctx context.Context, q ListQuery) ([]*domai
 	if err != nil {
 		return nil, 0, err
 	}
-	order, err := q.sortOrder(upstreamSortFields)
-	if err != nil {
-		return nil, 0, err
+	if q.Sort == "display_order" {
+		primary, tie := displayOrderOptions(upstream.FieldDisplayOrder, upstream.FieldID, q.Order)
+		pred = pred.Order(primary, tie)
+	} else {
+		order, err := q.sortOrder(upstreamSortFields)
+		if err != nil {
+			return nil, 0, err
+		}
+		pred = pred.Order(order)
 	}
 	if q.Limit <= 0 {
 		q.Limit = 20
@@ -177,7 +184,7 @@ func (r *UpstreamRepo) ListUpstreams(ctx context.Context, q ListQuery) ([]*domai
 	if q.Offset < 0 {
 		q.Offset = 0
 	}
-	rows, err := pred.Order(order).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	rows, err := pred.Offset(q.Offset).Limit(q.Limit).All(ctx)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -21,6 +21,10 @@ func (Upstream) Fields() []ent.Field {
 		field.Int64("id"),
 		field.String("name").Unique(),
 		field.String("base_url"),
+		// Null keeps existing rows in their historical newest-first order. A
+		// manual drag stores a sparse rank without coupling presentation to ID or
+		// routing priority.
+		field.Int64("display_order").Optional().Nillable(),
 		// The key is write-only at the management API boundary. It is retained here
 		// so a health/balance adapter can authenticate without putting secrets in
 		// the response model.

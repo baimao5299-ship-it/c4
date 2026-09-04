@@ -43,6 +43,10 @@ type UpstreamStore interface {
 	RecordUpstreamBalance(context.Context, *domain.Upstream, *string, *string, string, *time.Time) (*domain.Upstream, error)
 }
 
+type UpstreamOrderStore interface {
+	ReorderUpstreams(context.Context, []int64) error
+}
+
 // UpstreamSnapshotStore is an optional read surface for long-running admin
 // validation. Production repositories implement it with one ordered query so
 // rows cannot move between OFFSET pages while probes are running. Lightweight
@@ -467,6 +471,21 @@ func (s *Service) ListUpstreams(ctx context.Context, q repository.ListQuery) ([]
 	return rows, total, nil
 }
 
+func (s *Service) ReorderUpstreams(ctx context.Context, ids []int64) error {
+	store, err := s.upstreamStore()
+	if err != nil {
+		return err
+	}
+	ordered, ok := store.(UpstreamOrderStore)
+	if !ok {
+		return fmt.Errorf("%w: upstream ordering is not configured", ErrInvalidInput)
+	}
+	if err := validateDisplayOrderIDs(ids); err != nil {
+		return err
+	}
+	return mapRepoErr(ordered.ReorderUpstreams(ctx, append([]int64(nil), ids...)))
+}
+
 func (s *Service) GetUpstream(ctx context.Context, id int64) (*domain.Upstream, error) {
 	store, err := s.upstreamStore()
 	if err != nil {
@@ -616,6 +635,9 @@ func (s *Service) updateUpstream(ctx context.Context, u *domain.Upstream, valida
 	if current == nil || current.DeletedAt != nil {
 		return nil, fmt.Errorf("%w: id=%d deleted", ErrNotFound, u.ID)
 	}
+	// Ordering has a dedicated endpoint and is not part of the management form.
+	// Preserve it across ordinary metadata, credential and telemetry edits.
+	u.DisplayOrder = current.DisplayOrder
 	if u.ClearUpstreamKey && u.UpstreamKey != nil {
 		return nil, ErrInvalidInput
 	}

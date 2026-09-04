@@ -147,8 +147,11 @@ type ForgotPasswordRequest struct {
 
 // Group defines model for Group.
 type Group struct {
-	AllowedModels *[]string  `json:"AllowedModels,omitempty"`
-	CreatedAt     *time.Time `json:"CreatedAt,omitempty"`
+	AllowedModels *[]string `json:"AllowedModels,omitempty"`
+
+	// Category 用户渠道监控中的分类名称；空字符串表示未分类
+	Category  *string    `json:"Category,omitempty"`
+	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
 
 	// DeletedAt 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项）
 	DeletedAt *time.Time `json:"DeletedAt"`
@@ -408,7 +411,10 @@ type UserAuthResponse struct {
 // UserChannelMetric defines model for UserChannelMetric.
 type UserChannelMetric struct {
 	AllowedModels []string `json:"AllowedModels"`
-	GroupID       int64    `json:"GroupID"`
+
+	// Category 管理员设置的渠道分类；空字符串表示未分类
+	Category string `json:"Category"`
+	GroupID  int64  `json:"GroupID"`
 
 	// ModelPrices 公开分组中每个模型的当前单价；价格为应用分组倍率后的 USD/1M tokens。没有定价条目时仍保留模型，输入/输出单价为 null。
 	ModelPrices     []UserChannelModelPrice `json:"ModelPrices"`

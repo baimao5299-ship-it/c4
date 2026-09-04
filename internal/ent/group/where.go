@@ -65,6 +65,16 @@ func Remark(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldRemark, v))
 }
 
+// Category applies equality check predicate on the "category" field. It's identical to CategoryEQ.
+func Category(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldCategory, v))
+}
+
+// DisplayOrder applies equality check predicate on the "display_order" field. It's identical to DisplayOrderEQ.
+func DisplayOrder(v int64) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldDisplayOrder, v))
+}
+
 // PriceMultiplier applies equality check predicate on the "price_multiplier" field. It's identical to PriceMultiplierEQ.
 func PriceMultiplier(v int) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPriceMultiplier, v))
@@ -213,6 +223,121 @@ func RemarkEqualFold(v string) predicate.Group {
 // RemarkContainsFold applies the ContainsFold predicate on the "remark" field.
 func RemarkContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldRemark, v))
+}
+
+// CategoryEQ applies the EQ predicate on the "category" field.
+func CategoryEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldCategory, v))
+}
+
+// CategoryNEQ applies the NEQ predicate on the "category" field.
+func CategoryNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldCategory, v))
+}
+
+// CategoryIn applies the In predicate on the "category" field.
+func CategoryIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldCategory, vs...))
+}
+
+// CategoryNotIn applies the NotIn predicate on the "category" field.
+func CategoryNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldCategory, vs...))
+}
+
+// CategoryGT applies the GT predicate on the "category" field.
+func CategoryGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldCategory, v))
+}
+
+// CategoryGTE applies the GTE predicate on the "category" field.
+func CategoryGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldCategory, v))
+}
+
+// CategoryLT applies the LT predicate on the "category" field.
+func CategoryLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldCategory, v))
+}
+
+// CategoryLTE applies the LTE predicate on the "category" field.
+func CategoryLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldCategory, v))
+}
+
+// CategoryContains applies the Contains predicate on the "category" field.
+func CategoryContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldCategory, v))
+}
+
+// CategoryHasPrefix applies the HasPrefix predicate on the "category" field.
+func CategoryHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldCategory, v))
+}
+
+// CategoryHasSuffix applies the HasSuffix predicate on the "category" field.
+func CategoryHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldCategory, v))
+}
+
+// CategoryEqualFold applies the EqualFold predicate on the "category" field.
+func CategoryEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldCategory, v))
+}
+
+// CategoryContainsFold applies the ContainsFold predicate on the "category" field.
+func CategoryContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldCategory, v))
+}
+
+// DisplayOrderEQ applies the EQ predicate on the "display_order" field.
+func DisplayOrderEQ(v int64) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldDisplayOrder, v))
+}
+
+// DisplayOrderNEQ applies the NEQ predicate on the "display_order" field.
+func DisplayOrderNEQ(v int64) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldDisplayOrder, v))
+}
+
+// DisplayOrderIn applies the In predicate on the "display_order" field.
+func DisplayOrderIn(vs ...int64) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldDisplayOrder, vs...))
+}
+
+// DisplayOrderNotIn applies the NotIn predicate on the "display_order" field.
+func DisplayOrderNotIn(vs ...int64) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldDisplayOrder, vs...))
+}
+
+// DisplayOrderGT applies the GT predicate on the "display_order" field.
+func DisplayOrderGT(v int64) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldDisplayOrder, v))
+}
+
+// DisplayOrderGTE applies the GTE predicate on the "display_order" field.
+func DisplayOrderGTE(v int64) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldDisplayOrder, v))
+}
+
+// DisplayOrderLT applies the LT predicate on the "display_order" field.
+func DisplayOrderLT(v int64) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldDisplayOrder, v))
+}
+
+// DisplayOrderLTE applies the LTE predicate on the "display_order" field.
+func DisplayOrderLTE(v int64) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldDisplayOrder, v))
+}
+
+// DisplayOrderIsNil applies the IsNil predicate on the "display_order" field.
+func DisplayOrderIsNil() predicate.Group {
+	return predicate.Group(sql.FieldIsNull(FieldDisplayOrder))
+}
+
+// DisplayOrderNotNil applies the NotNil predicate on the "display_order" field.
+func DisplayOrderNotNil() predicate.Group {
+	return predicate.Group(sql.FieldNotNull(FieldDisplayOrder))
 }
 
 // VisibilityEQ applies the EQ predicate on the "visibility" field.

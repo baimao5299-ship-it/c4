@@ -222,23 +222,33 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 		out = append(out, metric)
 	}
 	slices.SortStableFunc(out, func(a, b *PublicChannelMetric) int {
-		if a.LastCalledAt != nil || b.LastCalledAt != nil {
-			if a.LastCalledAt == nil {
-				return 1
-			}
-			if b.LastCalledAt == nil {
-				return -1
-			}
-			if !a.LastCalledAt.Equal(*b.LastCalledAt) {
-				if a.LastCalledAt.After(*b.LastCalledAt) {
-					return -1
-				}
-				return 1
-			}
+		aOrder := effectiveChannelDisplayOrder(a.Group)
+		bOrder := effectiveChannelDisplayOrder(b.Group)
+		if aOrder < bOrder {
+			return -1
+		}
+		if aOrder > bOrder {
+			return 1
+		}
+		if a.Group.ID > b.Group.ID {
+			return -1
+		}
+		if a.Group.ID < b.Group.ID {
+			return 1
 		}
 		return strings.Compare(a.Group.Name, b.Group.Name)
 	})
 	return out, nil
+}
+
+func effectiveChannelDisplayOrder(group *domain.Group) int64 {
+	if group != nil && group.DisplayOrder != nil {
+		return *group.DisplayOrder
+	}
+	if group == nil {
+		return 0
+	}
+	return -group.ID * 1_000_000
 }
 
 // distinctConfiguredModels drops blanks and exact repeats only. Separator and

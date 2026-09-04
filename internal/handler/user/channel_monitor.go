@@ -90,7 +90,7 @@ func (h *UserAPI) GetUserChannelMonitor(w http.ResponseWriter, r *http.Request, 
 			modelPrices = append(modelPrices, row)
 		}
 		out.Rows = append(out.Rows, UserChannelMetric{
-			GroupID: metric.Group.ID, Name: metric.Group.Name, Remark: metric.Group.Remark, AllowedModels: models, ModelPrices: modelPrices,
+			GroupID: metric.Group.ID, Name: metric.Group.Name, Remark: metric.Group.Remark, Category: metric.Group.Category, AllowedModels: models, ModelPrices: modelPrices,
 			PriceMultiplier: multiplier, Status: status,
 		})
 	}

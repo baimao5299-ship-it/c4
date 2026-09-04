@@ -437,6 +437,15 @@ const (
 	GetAccountsParamsOrderDesc GetAccountsParamsOrder = "desc"
 )
 
+// Defines values for GetGroupsParamsSort.
+const (
+	GetGroupsParamsSortCreatedAt    GetGroupsParamsSort = "created_at"
+	GetGroupsParamsSortDisplayOrder GetGroupsParamsSort = "display_order"
+	GetGroupsParamsSortId           GetGroupsParamsSort = "id"
+	GetGroupsParamsSortName         GetGroupsParamsSort = "name"
+	GetGroupsParamsSortUpdatedAt    GetGroupsParamsSort = "updated_at"
+)
+
 // Defines values for GetGroupsParamsOrder.
 const (
 	GetGroupsParamsOrderAsc  GetGroupsParamsOrder = "asc"
@@ -571,16 +580,17 @@ const (
 
 // Defines values for GetUpstreamsParamsSort.
 const (
-	GetUpstreamsParamsSortBaseUrl       GetUpstreamsParamsSort = "base_url"
-	GetUpstreamsParamsSortCreatedAt     GetUpstreamsParamsSort = "created_at"
-	GetUpstreamsParamsSortFailureCount  GetUpstreamsParamsSort = "failure_count"
-	GetUpstreamsParamsSortId            GetUpstreamsParamsSort = "id"
-	GetUpstreamsParamsSortLastCheckedAt GetUpstreamsParamsSort = "last_checked_at"
-	GetUpstreamsParamsSortMultiplierBp  GetUpstreamsParamsSort = "multiplier_bp"
-	GetUpstreamsParamsSortName          GetUpstreamsParamsSort = "name"
-	GetUpstreamsParamsSortRequestCount  GetUpstreamsParamsSort = "request_count"
-	GetUpstreamsParamsSortSuccessCount  GetUpstreamsParamsSort = "success_count"
-	GetUpstreamsParamsSortUpdatedAt     GetUpstreamsParamsSort = "updated_at"
+	BaseUrl       GetUpstreamsParamsSort = "base_url"
+	CreatedAt     GetUpstreamsParamsSort = "created_at"
+	DisplayOrder  GetUpstreamsParamsSort = "display_order"
+	FailureCount  GetUpstreamsParamsSort = "failure_count"
+	Id            GetUpstreamsParamsSort = "id"
+	LastCheckedAt GetUpstreamsParamsSort = "last_checked_at"
+	MultiplierBp  GetUpstreamsParamsSort = "multiplier_bp"
+	Name          GetUpstreamsParamsSort = "name"
+	RequestCount  GetUpstreamsParamsSort = "request_count"
+	SuccessCount  GetUpstreamsParamsSort = "success_count"
+	UpdatedAt     GetUpstreamsParamsSort = "updated_at"
 )
 
 // Defines values for GetUpstreamsParamsOrder.
@@ -1070,8 +1080,11 @@ type GenerateResponse struct {
 
 // Group defines model for Group.
 type Group struct {
-	AllowedModels *[]string  `json:"AllowedModels,omitempty"`
-	CreatedAt     *time.Time `json:"CreatedAt,omitempty"`
+	AllowedModels *[]string `json:"AllowedModels,omitempty"`
+
+	// Category 用户渠道监控中的分类名称；空字符串表示未分类
+	Category  *string    `json:"Category,omitempty"`
+	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
 
 	// DeletedAt 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项）
 	DeletedAt *time.Time `json:"DeletedAt"`
@@ -1114,7 +1127,10 @@ type GroupAssignmentsResponse struct {
 type GroupCreate struct {
 	// AllowedModels 分组允许的模型白名单；空数组表示使用成员实际支持的模型交集
 	AllowedModels *[]string `json:"allowed_models,omitempty"`
-	Name          string    `json:"name"`
+
+	// Category 用户渠道监控中的分类名称；留空归入其他
+	Category *string `json:"category,omitempty"`
+	Name     string  `json:"name"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
 	PriceMultiplier *float64 `json:"price_multiplier"`
@@ -1623,6 +1639,17 @@ type RedemptionUse struct {
 type RedemptionUseListResponse struct {
 	Rows  []RedemptionUse `json:"rows"`
 	Total int64           `json:"total"`
+}
+
+// ReorderRequest defines model for ReorderRequest.
+type ReorderRequest struct {
+	// Ids 当前页面按拖动后的顺序排列的完整 ID 列表
+	Ids []int64 `json:"ids"`
+}
+
+// ReorderResponse defines model for ReorderResponse.
+type ReorderResponse struct {
+	Reordered int `json:"reordered"`
 }
 
 // RequestFormat defines model for RequestFormat.
@@ -2417,9 +2444,12 @@ type GetGroupsParams struct {
 	Limit  *int                  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *int                  `form:"offset,omitempty" json:"offset,omitempty"`
 	Name   *string               `form:"name,omitempty" json:"name,omitempty"`
-	Sort   *string               `form:"sort,omitempty" json:"sort,omitempty"`
+	Sort   *GetGroupsParamsSort  `form:"sort,omitempty" json:"sort,omitempty"`
 	Order  *GetGroupsParamsOrder `form:"order,omitempty" json:"order,omitempty"`
 }
+
+// GetGroupsParamsSort defines parameters for GetGroups.
+type GetGroupsParamsSort string
 
 // GetGroupsParamsOrder defines parameters for GetGroups.
 type GetGroupsParamsOrder string
@@ -2721,6 +2751,9 @@ type PostGroupsBatchDeleteJSONRequestBody = BatchDeleteBody
 // PostGroupsBatchUpdateJSONRequestBody defines body for PostGroupsBatchUpdate for application/json ContentType.
 type PostGroupsBatchUpdateJSONRequestBody = BatchUpdateGroupsBody
 
+// PostGroupsReorderJSONRequestBody defines body for PostGroupsReorder for application/json ContentType.
+type PostGroupsReorderJSONRequestBody = ReorderRequest
+
 // PutGroupsIdJSONRequestBody defines body for PutGroupsId for application/json ContentType.
 type PutGroupsIdJSONRequestBody = GroupCreate
 
@@ -2780,6 +2813,9 @@ type PostUpstreamsJSONRequestBody = UpstreamCreate
 
 // PostUpstreamsModelsJSONRequestBody defines body for PostUpstreamsModels for application/json ContentType.
 type PostUpstreamsModelsJSONRequestBody = UpstreamModelsPreview
+
+// PostUpstreamsReorderJSONRequestBody defines body for PostUpstreamsReorder for application/json ContentType.
+type PostUpstreamsReorderJSONRequestBody = ReorderRequest
 
 // PutUpstreamsIdJSONRequestBody defines body for PutUpstreamsId for application/json ContentType.
 type PutUpstreamsIdJSONRequestBody = UpstreamCreate
@@ -2861,6 +2897,9 @@ type ServerInterface interface {
 	// 批量更新分组（fields 为任意字段子集）
 	// (POST /groups/batch-update)
 	PostGroupsBatchUpdate(w http.ResponseWriter, r *http.Request)
+	// 按管理端拖动结果调整分组展示顺序，不改变路由优先级
+	// (POST /groups/reorder)
+	PostGroupsReorder(w http.ResponseWriter, r *http.Request)
 
 	// (DELETE /groups/{id})
 	DeleteGroupsId(w http.ResponseWriter, r *http.Request, id int64)
@@ -3014,6 +3053,9 @@ type ServerInterface interface {
 	// 新增上游前读取 Key 实际支持的模型
 	// (POST /upstreams/models)
 	PostUpstreamsModels(w http.ResponseWriter, r *http.Request)
+	// 按管理端拖动结果调整上游展示顺序，不改变调度策略
+	// (POST /upstreams/reorder)
+	PostUpstreamsReorder(w http.ResponseWriter, r *http.Request)
 	// 一键验证全部上游及其可用模型
 	// (POST /upstreams/validate-all)
 	PostUpstreamsValidateAll(w http.ResponseWriter, r *http.Request)
@@ -3191,6 +3233,12 @@ func (_ Unimplemented) PostGroupsBatchDelete(w http.ResponseWriter, r *http.Requ
 // 批量更新分组（fields 为任意字段子集）
 // (POST /groups/batch-update)
 func (_ Unimplemented) PostGroupsBatchUpdate(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 按管理端拖动结果调整分组展示顺序，不改变路由优先级
+// (POST /groups/reorder)
+func (_ Unimplemented) PostGroupsReorder(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3491,6 +3539,12 @@ func (_ Unimplemented) PostUpstreams(w http.ResponseWriter, r *http.Request) {
 // 新增上游前读取 Key 实际支持的模型
 // (POST /upstreams/models)
 func (_ Unimplemented) PostUpstreamsModels(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 按管理端拖动结果调整上游展示顺序，不改变调度策略
+// (POST /upstreams/reorder)
+func (_ Unimplemented) PostUpstreamsReorder(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4237,6 +4291,20 @@ func (siw *ServerInterfaceWrapper) PostGroupsBatchUpdate(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostGroupsBatchUpdate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostGroupsReorder operation middleware
+func (siw *ServerInterfaceWrapper) PostGroupsReorder(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostGroupsReorder(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5986,6 +6054,20 @@ func (siw *ServerInterfaceWrapper) PostUpstreamsModels(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// PostUpstreamsReorder operation middleware
+func (siw *ServerInterfaceWrapper) PostUpstreamsReorder(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUpstreamsReorder(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PostUpstreamsValidateAll operation middleware
 func (siw *ServerInterfaceWrapper) PostUpstreamsValidateAll(w http.ResponseWriter, r *http.Request) {
 
@@ -6814,6 +6896,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/groups/batch-update", wrapper.PostGroupsBatchUpdate)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/groups/reorder", wrapper.PostGroupsReorder)
+	})
+	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/groups/{id}", wrapper.DeleteGroupsId)
 	})
 	r.Group(func(r chi.Router) {
@@ -6965,6 +7050,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/upstreams/models", wrapper.PostUpstreamsModels)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/upstreams/reorder", wrapper.PostUpstreamsReorder)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/upstreams/validate-all", wrapper.PostUpstreamsValidateAll)

@@ -33,7 +33,8 @@ func toDomainKey(k *ent.Key) *domain.Key {
 
 func toDomainGroup(g *ent.Group) *domain.Group {
 	return &domain.Group{
-		ID: g.ID, Name: g.Name, Remark: g.Remark, Visibility: domain.GroupVisibility(g.Visibility),
+		ID: g.ID, Name: g.Name, Remark: g.Remark, Category: g.Category, DisplayOrder: g.DisplayOrder,
+		Visibility:       domain.GroupVisibility(g.Visibility),
 		PublicStatus:     domain.GroupPublicStatus(g.PublicStatus),
 		RoutingMode:      domain.GroupRoutingMode(g.RoutingMode),
 		PriceMultiplier:  g.PriceMultiplier,
@@ -164,7 +165,7 @@ func toDomainUpstream(u *ent.Upstream) *domain.Upstream {
 	models := append([]string{}, u.Models...)
 	modelFormats := cloneUpstreamModelFormats(u.ModelFormats)
 	return &domain.Upstream{
-		ID: u.ID, Name: u.Name, BaseURL: u.BaseURL, UpstreamKey: u.UpstreamKey,
+		ID: u.ID, Name: u.Name, BaseURL: u.BaseURL, UpstreamKey: u.UpstreamKey, DisplayOrder: u.DisplayOrder,
 		// ModelsCheckedAt distinguishes an exhaustive catalogue from a retained
 		// or not-yet-complete one. The model slice remains available for admin
 		// display and merge-on-success behavior in both cases.

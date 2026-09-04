@@ -285,6 +285,21 @@ func (f *fakeStore) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	return &c, nil
 }
 
+func (f *fakeStore) ReorderGroups(_ context.Context, ids []int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range ids {
+		if _, ok := f.groups[id]; !ok {
+			return missingErr(id)
+		}
+	}
+	for index, id := range ids {
+		rank := int64(index)
+		f.groups[id].DisplayOrder = &rank
+	}
+	return nil
+}
+
 // DeleteGroup 软删语义（镜像真实 repo：行保留 + deleted_at 置值；GET 单个仍
 // 可查已删项，列表过滤由 ListGroups 做）。
 func (f *fakeStore) DeleteGroup(ctx context.Context, id int64) error {

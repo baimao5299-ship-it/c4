@@ -202,6 +202,7 @@ func (r *GroupRepo) CreateGroupWithUpstreams(ctx context.Context, g *domain.Grou
 	row, err := tx.Group.Create().
 		SetName(g.Name).
 		SetRemark(g.Remark).
+		SetCategory(g.Category).
 		SetVisibility(group.Visibility(g.Visibility)).
 		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).
 		SetPriceMultiplier(g.PriceMultiplier).
@@ -285,23 +286,25 @@ func (r *GroupRepo) UpdateGroupWithUpstreams(ctx context.Context, g *domain.Grou
 	if allowedModels == nil {
 		allowedModels = []string{}
 	}
-	updated, err := tx.Group.Update().
+	updated := tx.Group.Update().
 		Where(group.IDEQ(g.ID), group.DeletedAtIsNil()).
 		SetName(g.Name).
 		SetRemark(g.Remark).
+		SetCategory(g.Category).
 		SetVisibility(group.Visibility(g.Visibility)).
+		SetPublicStatus(group.PublicStatus(g.EffectivePublicStatus())).
 		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).
 		SetPriceMultiplier(g.PriceMultiplier).
 		SetProtocolConvert(protocolConvertStrings(g.ProtocolConverts)).
-		SetAllowedModels(allowedModels).
-		Save(ctx)
+		SetAllowedModels(allowedModels)
+	updatedCount, err := updated.Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
 			return nil, fmt.Errorf("%w: name=%q", ErrConflict, g.Name)
 		}
 		return nil, err
 	}
-	if updated != 1 {
+	if updatedCount != 1 {
 		return nil, fmt.Errorf("%w: id=%d missing", ErrNotFound, g.ID)
 	}
 	if err := lockLiveGroups(ctx, r.rowLocks, tx.Group.Query, []int64{g.ID}); err != nil {

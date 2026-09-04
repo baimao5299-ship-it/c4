@@ -46,6 +46,34 @@ func (_c *GroupCreate) SetNillableRemark(v *string) *GroupCreate {
 	return _c
 }
 
+// SetCategory sets the "category" field.
+func (_c *GroupCreate) SetCategory(v string) *GroupCreate {
+	_c.mutation.SetCategory(v)
+	return _c
+}
+
+// SetNillableCategory sets the "category" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableCategory(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetCategory(*v)
+	}
+	return _c
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (_c *GroupCreate) SetDisplayOrder(v int64) *GroupCreate {
+	_c.mutation.SetDisplayOrder(v)
+	return _c
+}
+
+// SetNillableDisplayOrder sets the "display_order" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableDisplayOrder(v *int64) *GroupCreate {
+	if v != nil {
+		_c.SetDisplayOrder(*v)
+	}
+	return _c
+}
+
 // SetVisibility sets the "visibility" field.
 func (_c *GroupCreate) SetVisibility(v group.Visibility) *GroupCreate {
 	_c.mutation.SetVisibility(v)
@@ -261,6 +289,10 @@ func (_c *GroupCreate) defaults() {
 		v := group.DefaultRemark
 		_c.mutation.SetRemark(v)
 	}
+	if _, ok := _c.mutation.Category(); !ok {
+		v := group.DefaultCategory
+		_c.mutation.SetCategory(v)
+	}
 	if _, ok := _c.mutation.Visibility(); !ok {
 		v := group.DefaultVisibility
 		_c.mutation.SetVisibility(v)
@@ -302,6 +334,9 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.Remark(); !ok {
 		return &ValidationError{Name: "remark", err: errors.New(`ent: missing required field "Group.remark"`)}
+	}
+	if _, ok := _c.mutation.Category(); !ok {
+		return &ValidationError{Name: "category", err: errors.New(`ent: missing required field "Group.category"`)}
 	}
 	if _, ok := _c.mutation.Visibility(); !ok {
 		return &ValidationError{Name: "visibility", err: errors.New(`ent: missing required field "Group.visibility"`)}
@@ -382,6 +417,14 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Remark(); ok {
 		_spec.SetField(group.FieldRemark, field.TypeString, value)
 		_node.Remark = value
+	}
+	if value, ok := _c.mutation.Category(); ok {
+		_spec.SetField(group.FieldCategory, field.TypeString, value)
+		_node.Category = value
+	}
+	if value, ok := _c.mutation.DisplayOrder(); ok {
+		_spec.SetField(group.FieldDisplayOrder, field.TypeInt64, value)
+		_node.DisplayOrder = &value
 	}
 	if value, ok := _c.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
@@ -556,6 +599,42 @@ func (u *GroupUpsert) SetRemark(v string) *GroupUpsert {
 // UpdateRemark sets the "remark" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateRemark() *GroupUpsert {
 	u.SetExcluded(group.FieldRemark)
+	return u
+}
+
+// SetCategory sets the "category" field.
+func (u *GroupUpsert) SetCategory(v string) *GroupUpsert {
+	u.Set(group.FieldCategory, v)
+	return u
+}
+
+// UpdateCategory sets the "category" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateCategory() *GroupUpsert {
+	u.SetExcluded(group.FieldCategory)
+	return u
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (u *GroupUpsert) SetDisplayOrder(v int64) *GroupUpsert {
+	u.Set(group.FieldDisplayOrder, v)
+	return u
+}
+
+// UpdateDisplayOrder sets the "display_order" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateDisplayOrder() *GroupUpsert {
+	u.SetExcluded(group.FieldDisplayOrder)
+	return u
+}
+
+// AddDisplayOrder adds v to the "display_order" field.
+func (u *GroupUpsert) AddDisplayOrder(v int64) *GroupUpsert {
+	u.Add(group.FieldDisplayOrder, v)
+	return u
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (u *GroupUpsert) ClearDisplayOrder() *GroupUpsert {
+	u.SetNull(group.FieldDisplayOrder)
 	return u
 }
 
@@ -752,6 +831,48 @@ func (u *GroupUpsertOne) SetRemark(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateRemark() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateRemark()
+	})
+}
+
+// SetCategory sets the "category" field.
+func (u *GroupUpsertOne) SetCategory(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetCategory(v)
+	})
+}
+
+// UpdateCategory sets the "category" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateCategory() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateCategory()
+	})
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (u *GroupUpsertOne) SetDisplayOrder(v int64) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetDisplayOrder(v)
+	})
+}
+
+// AddDisplayOrder adds v to the "display_order" field.
+func (u *GroupUpsertOne) AddDisplayOrder(v int64) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.AddDisplayOrder(v)
+	})
+}
+
+// UpdateDisplayOrder sets the "display_order" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateDisplayOrder() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateDisplayOrder()
+	})
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (u *GroupUpsertOne) ClearDisplayOrder() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearDisplayOrder()
 	})
 }
 
@@ -1134,6 +1255,48 @@ func (u *GroupUpsertBulk) SetRemark(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateRemark() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateRemark()
+	})
+}
+
+// SetCategory sets the "category" field.
+func (u *GroupUpsertBulk) SetCategory(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetCategory(v)
+	})
+}
+
+// UpdateCategory sets the "category" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateCategory() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateCategory()
+	})
+}
+
+// SetDisplayOrder sets the "display_order" field.
+func (u *GroupUpsertBulk) SetDisplayOrder(v int64) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetDisplayOrder(v)
+	})
+}
+
+// AddDisplayOrder adds v to the "display_order" field.
+func (u *GroupUpsertBulk) AddDisplayOrder(v int64) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.AddDisplayOrder(v)
+	})
+}
+
+// UpdateDisplayOrder sets the "display_order" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateDisplayOrder() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateDisplayOrder()
+	})
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (u *GroupUpsertBulk) ClearDisplayOrder() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearDisplayOrder()
 	})
 }
 

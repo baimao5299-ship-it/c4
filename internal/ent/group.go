@@ -22,6 +22,10 @@ type Group struct {
 	Name string `json:"name,omitempty"`
 	// Remark holds the value of the "remark" field.
 	Remark string `json:"remark,omitempty"`
+	// Category holds the value of the "category" field.
+	Category string `json:"category,omitempty"`
+	// DisplayOrder holds the value of the "display_order" field.
+	DisplayOrder *int64 `json:"display_order,omitempty"`
 	// Visibility holds the value of the "visibility" field.
 	Visibility group.Visibility `json:"visibility,omitempty"`
 	// PublicStatus holds the value of the "public_status" field.
@@ -104,9 +108,9 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case group.FieldProtocolConvert, group.FieldAllowedModels:
 			values[i] = new([]byte)
-		case group.FieldID, group.FieldPriceMultiplier:
+		case group.FieldID, group.FieldDisplayOrder, group.FieldPriceMultiplier:
 			values[i] = new(sql.NullInt64)
-		case group.FieldName, group.FieldRemark, group.FieldVisibility, group.FieldPublicStatus, group.FieldRoutingMode:
+		case group.FieldName, group.FieldRemark, group.FieldCategory, group.FieldVisibility, group.FieldPublicStatus, group.FieldRoutingMode:
 			values[i] = new(sql.NullString)
 		case group.FieldUpdatedAt, group.FieldDeletedAt, group.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -142,6 +146,19 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field remark", values[i])
 			} else if value.Valid {
 				_m.Remark = value.String
+			}
+		case group.FieldCategory:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field category", values[i])
+			} else if value.Valid {
+				_m.Category = value.String
+			}
+		case group.FieldDisplayOrder:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field display_order", values[i])
+			} else if value.Valid {
+				_m.DisplayOrder = new(int64)
+				*_m.DisplayOrder = value.Int64
 			}
 		case group.FieldVisibility:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -263,6 +280,14 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("remark=")
 	builder.WriteString(_m.Remark)
+	builder.WriteString(", ")
+	builder.WriteString("category=")
+	builder.WriteString(_m.Category)
+	builder.WriteString(", ")
+	if v := _m.DisplayOrder; v != nil {
+		builder.WriteString("display_order=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("visibility=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Visibility))

@@ -10,6 +10,26 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.24] - 2026-09-04
+
+### Added
+
+- Administrators can drag upstreams and groups into a persistent display
+  order with mouse, touch, or keyboard controls. Display order is isolated
+  from routing priority, weight, concurrency, and scheduler decisions.
+- Groups can be assigned a user-facing channel category. The public channel
+  monitor presents groups under those categories and places uncategorized
+  groups under Other.
+
+### Fixed
+
+- Concurrent reorder requests now lock and update rows in a deterministic
+  transaction order, preventing stale snapshots and lock-order deadlocks.
+- Saving group membership no longer restores an older display order captured
+  before a concurrent drag operation.
+- Management action bars wrap cleanly on narrow screens, and the group table
+  renders the translated category heading.
+
 ## [v0.0.1-beta.23] - 2026-09-04
 
 ### Fixed

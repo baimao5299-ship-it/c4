@@ -23,6 +23,8 @@ type Upstream struct {
 	Name string `json:"name,omitempty"`
 	// BaseURL holds the value of the "base_url" field.
 	BaseURL string `json:"base_url,omitempty"`
+	// DisplayOrder holds the value of the "display_order" field.
+	DisplayOrder *int64 `json:"display_order,omitempty"`
 	// UpstreamKey holds the value of the "upstream_key" field.
 	UpstreamKey *string `json:"upstream_key,omitempty"`
 	// Models holds the value of the "models" field.
@@ -125,7 +127,7 @@ func (*Upstream) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case upstream.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case upstream.FieldID, upstream.FieldMultiplierBp, upstream.FieldRequestCount, upstream.FieldSuccessCount, upstream.FieldFailureCount, upstream.FieldLatencyTotalMs, upstream.FieldLatencyMaxMs:
+		case upstream.FieldID, upstream.FieldDisplayOrder, upstream.FieldMultiplierBp, upstream.FieldRequestCount, upstream.FieldSuccessCount, upstream.FieldFailureCount, upstream.FieldLatencyTotalMs, upstream.FieldLatencyMaxMs:
 			values[i] = new(sql.NullInt64)
 		case upstream.FieldName, upstream.FieldBaseURL, upstream.FieldUpstreamKey, upstream.FieldModelsError, upstream.FieldNote, upstream.FieldBalanceEndpoint, upstream.FieldBalanceMethod, upstream.FieldBalanceAuth, upstream.FieldBalancePath, upstream.FieldBalanceCurrencyPath, upstream.FieldBalanceAmount, upstream.FieldBalanceCurrency, upstream.FieldBalanceStatus, upstream.FieldLastError:
 			values[i] = new(sql.NullString)
@@ -163,6 +165,13 @@ func (_m *Upstream) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field base_url", values[i])
 			} else if value.Valid {
 				_m.BaseURL = value.String
+			}
+		case upstream.FieldDisplayOrder:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field display_order", values[i])
+			} else if value.Valid {
+				_m.DisplayOrder = new(int64)
+				*_m.DisplayOrder = value.Int64
 			}
 		case upstream.FieldUpstreamKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -405,6 +414,11 @@ func (_m *Upstream) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("base_url=")
 	builder.WriteString(_m.BaseURL)
+	builder.WriteString(", ")
+	if v := _m.DisplayOrder; v != nil {
+		builder.WriteString("display_order=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.UpstreamKey; v != nil {
 		builder.WriteString("upstream_key=")

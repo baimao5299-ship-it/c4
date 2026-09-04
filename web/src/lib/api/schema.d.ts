@@ -306,6 +306,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/upstreams/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 按管理端拖动结果调整上游展示顺序，不改变调度策略 */
+        post: operations["PostUpstreamsReorder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/upstreams/{id}": {
         parameters: {
             query?: never;
@@ -514,6 +531,23 @@ export interface paths {
         put?: never;
         /** 创建分组（平台容量池；key 为独立表，由用户面 /user/keys 创建） */
         post: operations["PostGroups"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 按管理端拖动结果调整分组展示顺序，不改变路由优先级 */
+        post: operations["PostGroupsReorder"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2088,6 +2122,8 @@ export interface components {
             Name: string;
             /** @description 管理员给用户看的分组备注 */
             Remark: string;
+            /** @description 管理员设置的渠道分类；空字符串表示未分类 */
+            Category: string;
             AllowedModels: string[];
             /** @description 公开分组中每个模型的当前单价；价格为应用分组倍率后的 USD/1M tokens。没有定价条目时仍保留模型，输入/输出单价为 null。 */
             ModelPrices: components["schemas"]["UserChannelModelPrice"][];
@@ -2383,6 +2419,8 @@ export interface components {
             name: string;
             /** @description 管理员给用户看的分组备注 */
             remark?: string;
+            /** @description 用户渠道监控中的分类名称；留空归入其他 */
+            category?: string;
             visibility?: components["schemas"]["GroupVisibility"];
             public_status?: components["schemas"]["GroupPublicStatus"];
             routing_mode?: components["schemas"]["GroupRoutingMode"];
@@ -2513,6 +2551,8 @@ export interface components {
             Name?: string;
             /** @description 管理员给用户看的分组备注 */
             Remark?: string;
+            /** @description 用户渠道监控中的分类名称；空字符串表示未分类 */
+            Category?: string;
             Visibility?: components["schemas"]["GroupVisibility"];
             PublicStatus?: components["schemas"]["GroupPublicStatus"];
             RoutingMode?: components["schemas"]["GroupRoutingMode"];
@@ -2533,6 +2573,13 @@ export interface components {
              * @description 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项）
              */
             DeletedAt?: string | null;
+        };
+        ReorderRequest: {
+            /** @description 当前页面按拖动后的顺序排列的完整 ID 列表 */
+            ids: number[];
+        };
+        ReorderResponse: {
+            reordered: number;
         };
         /**
          * @description accounts 使用现有账号池；upstreams 使用本组上游成员
@@ -4359,7 +4406,7 @@ export interface operations {
                 offset?: number;
                 name?: string;
                 status?: "active" | "disabled";
-                sort?: "id" | "name" | "base_url" | "multiplier_bp" | "request_count" | "success_count" | "failure_count" | "last_checked_at" | "created_at" | "updated_at";
+                sort?: "id" | "name" | "base_url" | "multiplier_bp" | "request_count" | "success_count" | "failure_count" | "last_checked_at" | "created_at" | "updated_at" | "display_order";
                 order?: "asc" | "desc";
             };
             header?: never;
@@ -4400,6 +4447,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Upstream"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUpstreamsReorder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description 已保存的记录数 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReorderResponse"];
                 };
             };
             default: components["responses"]["Error"];
@@ -4706,7 +4778,7 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 name?: string;
-                sort?: string;
+                sort?: "id" | "name" | "created_at" | "updated_at" | "display_order";
                 order?: "asc" | "desc";
             };
             header?: never;
@@ -4747,6 +4819,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Group"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostGroupsReorder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description 已保存的记录数 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReorderResponse"];
                 };
             };
             default: components["responses"]["Error"];

@@ -117,6 +117,9 @@ func (s *groupUpstreamStoreStub) UpdateGroupWithUpstreams(_ context.Context, gro
 		return nil, fmt.Errorf("invalid routing payload")
 	}
 	updated := *group
+	if current := s.groups[group.ID]; updated.DisplayOrder == nil && current != nil {
+		updated.DisplayOrder = current.DisplayOrder
+	}
 	s.groups[group.ID] = &updated
 	rows := make([]*domain.GroupUpstream, 0, len(members))
 	for i, member := range members {
@@ -227,14 +230,16 @@ func TestCreateUpstreamGroupRejectsIncompletePayloadBeforeRepository(t *testing.
 
 func TestUpdateGroupWithUpstreamsCommitsPolicyAndMembersTogether(t *testing.T) {
 	store := newGroupUpstreamStoreStub()
-	store.groups[1] = &domain.Group{ID: 1, Name: "old", Visibility: domain.GroupVisibilityPublic, RoutingMode: domain.GroupRoutingModeUpstreams, AllowedModels: []string{"gpt-old"}, PriceMultiplier: 10000}
+	currentOrder := int64(200)
+	staleOrder := int64(100)
+	store.groups[1] = &domain.Group{ID: 1, Name: "old", DisplayOrder: &currentOrder, Visibility: domain.GroupVisibilityPublic, RoutingMode: domain.GroupRoutingModeUpstreams, AllowedModels: []string{"gpt-old"}, PriceMultiplier: 10000}
 	store.upstreams[11] = &domain.Upstream{ID: 11, Name: "a", BaseURL: "https://a.example", Enabled: true}
 	store.upstreams[12] = &domain.Upstream{ID: 12, Name: "b", BaseURL: "https://b.example", Enabled: true}
 	store.members[1] = []*domain.GroupUpstream{{ID: 1, GroupID: 1, UpstreamID: 11, Weight: 100, MaxConcurrency: 8, Enabled: true}}
 	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
 
 	updated, err := svc.UpdateGroupWithUpstreams(context.Background(), &domain.Group{
-		ID: 1, Name: "new", Visibility: domain.GroupVisibilityPrivate,
+		ID: 1, Name: "new", DisplayOrder: &staleOrder, Visibility: domain.GroupVisibilityPrivate,
 		RoutingMode: domain.GroupRoutingModeUpstreams, AllowedModels: []string{"gpt-new"}, PriceMultiplier: 12500,
 	}, []*domain.GroupUpstream{{UpstreamID: 12, Weight: 60, MaxConcurrency: 4, Enabled: true}})
 	require.NoError(t, err)
@@ -244,6 +249,8 @@ func TestUpdateGroupWithUpstreamsCommitsPolicyAndMembersTogether(t *testing.T) {
 	require.Len(t, store.members[1], 1)
 	require.Equal(t, int64(12), store.members[1][0].UpstreamID)
 	require.Equal(t, 60, store.members[1][0].Weight)
+	require.NotNil(t, updated.DisplayOrder)
+	require.Equal(t, currentOrder, *updated.DisplayOrder, "member edits must not restore a stale presentation order")
 }
 
 func TestUpdateGroupWithUpstreamsRejectsInvalidReplacementBeforeWrite(t *testing.T) {

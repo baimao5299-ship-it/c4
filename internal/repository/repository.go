@@ -112,7 +112,7 @@ func newRepositoryWithLocks(client *ent.Client, drv dialect.Driver, pool *pgxpoo
 		TemplateExts:   &TemplateExtRepo{client: client},
 		AccountExts:    &AccountExtRepo{client: client},
 		EmailTemplates: &EmailTemplateRepo{client: client},
-		Upstreams:      &UpstreamRepo{client: client, driver: drv, pool: pool},
+		Upstreams:      &UpstreamRepo{client: client, driver: drv, pool: pool, rowLocks: rowLocks},
 		Client:         client,
 		driver:         drv,
 	}
@@ -171,6 +171,9 @@ func (r *Repository) GetUpstream(ctx context.Context, id int64) (*domain.Upstrea
 }
 func (r *Repository) ListUpstreams(ctx context.Context, q ListQuery) ([]*domain.Upstream, int64, error) {
 	return r.Upstreams.ListUpstreams(ctx, q)
+}
+func (r *Repository) ReorderUpstreams(ctx context.Context, ids []int64) error {
+	return r.Upstreams.ReorderUpstreams(ctx, ids)
 }
 
 // ListAllUpstreams forwards the stable, ID-ordered snapshot used by long-running
@@ -449,6 +452,9 @@ func (r *Repository) GetGroup(ctx context.Context, id int64) (*domain.Group, err
 
 func (r *Repository) ListGroups(ctx context.Context, q ListQuery) ([]*domain.Group, int64, error) {
 	return r.Groups.ListGroups(ctx, q)
+}
+func (r *Repository) ReorderGroups(ctx context.Context, ids []int64) error {
+	return r.Groups.ReorderGroups(ctx, ids)
 }
 
 func (r *Repository) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
