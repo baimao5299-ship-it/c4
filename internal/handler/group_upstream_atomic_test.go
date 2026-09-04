@@ -255,7 +255,7 @@ func TestPutGroupsUpstreamsAtomic(t *testing.T) {
 	require.NotNil(t, group.ID)
 
 	updateBody := `{
-		"name":"edited-route","visibility":"private","routing_mode":"upstreams",
+		"name":"edited-route","visibility":"private","public_status":"maintenance","routing_mode":"upstreams",
 		"allowed_models":["gpt-5.5"],"price_multiplier":1.4,
 		"upstream_members":[{"upstream_id":` + itoa(secondID) + `,"weight":75,"max_concurrency":9}]
 	}`
@@ -271,6 +271,7 @@ func TestPutGroupsUpstreamsAtomic(t *testing.T) {
 	store.mu.Unlock()
 	require.Equal(t, "edited-route", stored.Name)
 	require.Equal(t, domain.GroupVisibilityPrivate, stored.Visibility)
+	require.Equal(t, domain.GroupPublicStatusMaintenance, stored.PublicStatus)
 	require.Equal(t, 14000, stored.PriceMultiplier)
 	require.Equal(t, []string{"gpt-5-5"}, stored.AllowedModels)
 	require.Len(t, members, 1)

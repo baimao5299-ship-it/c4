@@ -53,6 +53,13 @@ interface UpstreamMemberDraft {
   enabled: boolean
 }
 
+// Provider catalogues are not consistent about case or separators. The
+// backend stores a canonical key, while the UI keeps the provider spelling so
+// requests can be sent verbatim. Use this key only for comparisons.
+const modelKey = (value: string): string => value.trim().toLowerCase().replace(/[._]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+
+const modelKeys = (values: readonly string[]): Set<string> => new Set(values.map(modelKey).filter(Boolean))
+
 const defaultUpstreamMember = (upstream_id: number): UpstreamMemberDraft => ({
   upstream_id,
   priority: '0',
@@ -138,7 +145,19 @@ function UpstreamPoolFields({
   // Only show models confirmed by the current upstream catalogue. Keeping
   // stale values visible made it possible to save a model after replacing a
   // member, even though no selected upstream advertised it anymore.
-  const options = models
+  // Keep saved choices visible while a provider catalogue is temporarily
+  // empty or uses a different spelling. This avoids an edit dialog that
+  // appears to have lost the persisted allowlist.
+  const options = useMemo(() => {
+    const seen = new Set<string>()
+    return [...models, ...allowedModels].filter(model => {
+      const key = modelKey(model)
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [allowedModels, models])
+  const allowedKeys = useMemo(() => modelKeys(allowedModels), [allowedModels])
   return (
     <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
       {!showMode && (
@@ -233,7 +252,7 @@ function UpstreamPoolFields({
               <div className="grid max-h-44 gap-1.5 overflow-y-auto sm:grid-cols-2">
                 {options.map(model => (
                   <label key={model} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-xs">
-                    <Checkbox checked={allowedModels.includes(model)} onCheckedChange={checked => onToggleModel(model, checked === true)} />
+                    <Checkbox checked={allowedKeys.has(modelKey(model))} onCheckedChange={checked => onToggleModel(model, checked === true)} />
                     <span className="truncate font-mono" title={model}>{model}</span>
                   </label>
                 ))}
@@ -707,6 +726,8 @@ export default function Groups() {
   const [editRoutingMode, setEditRoutingMode] = useState<GroupRoutingMode>('accounts')
   const [editAllowedModels, setEditAllowedModels] = useState<string[]>([])
   const [editMembers, setEditMembers] = useState<UpstreamMemberDraft[]>([])
+  const editMembersTouched = useRef(false)
+  const editInitialMemberKey = useRef<string | null>(null)
   const editPoolLoadedKey = useRef<string | null>(null)
   const editAutoModelKey = useRef<string | null>(null)
   const { data: upstreamRowsData, isLoading: upstreamRowsLoading, isError: upstreamRowsError, refetch: refetchUpstreams } = useQuery({
@@ -734,8 +755,14 @@ export default function Groups() {
     // The detail response is fetched on every open and is authoritative. The
     // list row may come from another window and be stale.
     setEditRoutingMode(config.routing_mode ?? editTarget.RoutingMode ?? 'accounts')
-    setEditAllowedModels(config.allowed_models ?? editTarget.AllowedModels ?? [])
+    // A detail response can be an empty placeholder while the list row still
+    // carries the persisted allowlist. Do not make a reopened edit form look
+    // like its saved models disappeared.
+    const detailModels = config.allowed_models ?? []
+    const rowModels = editTarget.AllowedModels ?? []
+    setEditAllowedModels(detailModels.length > 0 || rowModels.length === 0 ? detailModels : rowModels)
     setEditMembers((config.members ?? []).map(draftFromUpstream))
+    editInitialMemberKey.current = (config.members ?? []).map(member => member.UpstreamID).sort((a, b) => a - b).join(',')
     editPoolLoadedKey.current = key
   }, [editTarget, editUpstreamConfig.data, editUpstreamConfig.dataUpdatedAt])
   const activeMemberIDs = (createOpen ? createMembers : editTarget ? editMembers : []).map(member => member.upstream_id).sort((a, b) => a - b)
@@ -769,7 +796,7 @@ export default function Groups() {
     createMembers.length > 0 &&
     createAllowedModels.length > 0 &&
     activeModels.length > 0 &&
-    createAllowedModels.every(model => activeModels.includes(model)) &&
+    createAllowedModels.every(model => modelKeys(activeModels).has(modelKey(model))) &&
     !upstreamRowsLoading &&
     !upstreamRowsError &&
     !groupModels.isLoading &&
@@ -780,14 +807,18 @@ export default function Groups() {
     // A member replacement invalidates any allowlist entry that a complete
     // catalogue no longer confirms. During a partial check, keep the prior
     // choices visible until the retry succeeds.
-    if (!editTarget || editRoutingMode !== 'upstreams' || activeMemberIDs.length === 0 || activeModelsPartial || activeModels.length === 0) return
+    // Do not prune a persisted allowlist merely because a provider's current
+    // catalogue is incomplete or temporarily omits a model. Pruning is only
+    // appropriate after the operator explicitly changes the member pool.
+    if (!editMembersTouched.current || !editTarget || editRoutingMode !== 'upstreams' || activeMemberIDs.length === 0 || activeModelsPartial || activeModels.length === 0 || activeMemberKey === editInitialMemberKey.current) return
     // Include the capability snapshot in the guard. A model refresh can keep
     // the same member IDs while removing a previously selected model; in that
     // case the allowlist must be pruned before the next save.
     const key = `${editTarget.ID}:${activeMemberKey}:${upstreamModelSnapshotKey}`
     if (editAutoModelKey.current === key) return
     editAutoModelKey.current = key
-    setEditAllowedModels(current => current.filter(model => activeModels.includes(model)))
+    const activeModelKeys = modelKeys(activeModels)
+    setEditAllowedModels(current => current.filter(model => activeModelKeys.has(modelKey(model))))
   }, [activeMemberKey, activeMemberIDs.length, activeModels, activeModelsPartial, editRoutingMode, editTarget, upstreamModelSnapshotKey])
   useEffect(() => {
     // A new upstream pool starts with the models that were actually read. This
@@ -804,15 +835,25 @@ export default function Groups() {
       // A pool edit can remove models that are no longer advertised. Keep
       // explicit user choices that remain valid instead of silently selecting
       // newly discovered models.
-      return current.filter(model => activeModels.includes(model))
+      const activeModelKeys = modelKeys(activeModels)
+      return current.filter(model => activeModelKeys.has(modelKey(model)))
     })
   }, [activeMemberKey, activeModels, activeModelsPartial, createOpen, createRoutingMode, upstreamModelSnapshotKey])
   const updateCreateMember = (id: number, patch: Partial<UpstreamMemberDraft>) => setCreateMembers(current => current.map(member => member.upstream_id === id ? { ...member, ...patch } : member))
   const toggleCreateMember = (id: number, checked: boolean) => setCreateMembers(current => checked ? (current.some(member => member.upstream_id === id) ? current : [...current, defaultUpstreamMember(id)]) : current.filter(member => member.upstream_id !== id))
   const updateEditMember = (id: number, patch: Partial<UpstreamMemberDraft>) => setEditMembers(current => current.map(member => member.upstream_id === id ? { ...member, ...patch } : member))
-  const toggleEditMember = (id: number, checked: boolean) => setEditMembers(current => checked ? (current.some(member => member.upstream_id === id) ? current : [...current, defaultUpstreamMember(id)]) : current.filter(member => member.upstream_id !== id))
-  const toggleModel = (setter: Dispatch<SetStateAction<string[]>>, model: string, checked: boolean) => setter(current => checked ? (current.includes(model) ? current : [...current, model]) : current.filter(value => value !== model))
-  const selectAllModels = (setter: Dispatch<SetStateAction<string[]>>) => setter(activeModels)
+  const toggleEditMember = (id: number, checked: boolean) => {
+    editMembersTouched.current = true
+    setEditMembers(current => checked ? (current.some(member => member.upstream_id === id) ? current : [...current, defaultUpstreamMember(id)]) : current.filter(member => member.upstream_id !== id))
+  }
+  const toggleModel = (setter: Dispatch<SetStateAction<string[]>>, model: string, checked: boolean) => {
+    const key = modelKey(model)
+    if (!key) return
+    setter(current => checked
+      ? (modelKeys(current).has(key) ? current : [...current, key])
+      : current.filter(value => modelKey(value) !== key))
+  }
+  const selectAllModels = (setter: Dispatch<SetStateAction<string[]>>) => setter(Array.from(modelKeys(activeModels)))
   const toggleCreateModel = (model: string, checked: boolean) => {
     createModelsTouched.current = true
     toggleModel(setCreateAllowedModels, model, checked)
@@ -824,6 +865,8 @@ export default function Groups() {
   const openEdit = (group: Group) => {
     editPoolLoadedKey.current = null
     editAutoModelKey.current = null
+    editMembersTouched.current = false
+    editInitialMemberKey.current = null
     setEditTarget(group)
     setEditName(group.Name ?? '')
     setEditRemark(group.Remark ?? '')
@@ -851,7 +894,13 @@ export default function Groups() {
       body.upstream_members = editRoutingMode === 'upstreams' ? serializeUpstreamMembers(editMembers) : []
       return api.updateGroup(editTarget!.ID!, body)
     },
-    onSuccess: () => {
+    onSuccess: updated => {
+      // Make policy changes visible immediately in any cached page; the
+      // invalidation below still reconciles with the authoritative response.
+      qc.setQueriesData<components['schemas']['GroupListResponse']>({ queryKey: ['groups'] }, current => current ? {
+        ...current,
+        rows: current.rows.map(row => row.ID === updated.ID ? updated : row),
+      } : current)
       qc.invalidateQueries({ queryKey: ['groups'] })
       qc.invalidateQueries({ queryKey: ['group-upstreams'] })
       setEditTarget(null)
@@ -1155,7 +1204,11 @@ export default function Groups() {
             </div>
             <UpstreamPoolFields
               mode={editRoutingMode}
-              onModeChange={mode => { setEditRoutingMode(mode); if (mode === 'accounts') { setEditMembers([]); setEditAllowedModels([]) } }}
+              onModeChange={mode => {
+                setEditRoutingMode(mode)
+                if (mode === 'accounts') { setEditMembers([]); setEditAllowedModels([]) }
+                else editMembersTouched.current = true
+              }}
               upstreams={upstreamRows}
               upstreamsLoading={upstreamRowsLoading}
               upstreamsError={upstreamRowsError}
@@ -1197,7 +1250,7 @@ export default function Groups() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditTarget(null)} disabled={rename.isPending}>{t('common.cancel')}</Button>
-            <Button onClick={() => rename.mutate()} disabled={rename.isPending || !editName.trim() || (editRoutingMode === 'upstreams' && (editMembers.length === 0 || editAllowedModels.length === 0 || (!activeModelsPartial && editAllowedModels.some(model => !activeModels.includes(model))) || groupModels.isLoading || editUpstreamConfig.isLoading || editUpstreamConfig.isError))}>
+            <Button onClick={() => rename.mutate()} disabled={rename.isPending || !editName.trim() || (editRoutingMode === 'upstreams' && (editMembers.length === 0 || editAllowedModels.length === 0 || (!activeModelsPartial && editAllowedModels.some(model => !modelKeys(activeModels).has(modelKey(model)))) || groupModels.isLoading || editUpstreamConfig.isLoading || editUpstreamConfig.isError))}>
               {rename.isPending ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>
