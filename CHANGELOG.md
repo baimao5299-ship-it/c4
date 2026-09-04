@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.0.1-beta.32] - 2026-09-05
+
+- Require explicit confirmation before starting full upstream validation.
+- Add a safe stop-wait action that ends dashboard polling without changing
+  upstream configuration or partially applying results.
+
 ## [v0.0.1-beta.31] - 2026-09-04
 
 - Harden the groups console against legacy or partial API responses that omit

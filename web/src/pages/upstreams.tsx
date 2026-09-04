@@ -2,7 +2,7 @@
 // Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
@@ -73,6 +73,16 @@ type SaveArgs = {
 type ModelValidationResult =
   | { ok: true }
   | { ok: false; reason: string }
+
+// Cancelling the dashboard wait is deliberately local. The server-side task
+// keeps its own consistency guarantees and can finish without leaving a
+// partially applied validation snapshot.
+class BatchValidationCanceled extends Error {
+  constructor() {
+    super('batch validation wait canceled')
+    this.name = 'BatchValidationCanceled'
+  }
+}
 
 const EMPTY_FORM: FormState = {
   name: '',
@@ -371,8 +381,10 @@ export default function Upstreams() {
   const [pendingModelIDs, setPendingModelIDs] = useState<Set<number>>(() => new Set())
   const [pendingToggleIDs, setPendingToggleIDs] = useState<Set<number>>(() => new Set())
   const [batchValidationOpen, setBatchValidationOpen] = useState(false)
+  const [batchValidationConfirmOpen, setBatchValidationConfirmOpen] = useState(false)
   const [batchValidationResult, setBatchValidationResult] = useState<UpstreamBatchValidationResponse | null>(null)
   const [batchValidationProgress, setBatchValidationProgress] = useState<UpstreamValidationTaskResponse | null>(null)
+  const batchValidationCancelRef = useRef(false)
 
   const queryKey = ['upstreams', { name: debouncedName, status, page, pageSize, sort, order }] as const
   const query = useQuery({
@@ -597,17 +609,20 @@ export default function Upstreams() {
       // that bounded server budget plus a small network margin.
       const deadline = Date.now() + 17 * 60_000
       while (Date.now() < deadline) {
+        if (batchValidationCancelRef.current) throw new BatchValidationCanceled()
         let progress: UpstreamValidationTaskResponse
         try {
           progress = await api.getValidateAllUpstreamsTask(started.task_id)
           setBatchValidationProgress(progress)
         } catch (error) {
+          if (batchValidationCancelRef.current) throw new BatchValidationCanceled()
           if (!isRetryableValidationPollError(error)) throw error
           // A single lost poll is not a failed validation. Keep the last real
           // counters on screen and retry with a small bounded backoff.
           await new Promise(resolve => window.setTimeout(resolve, 750))
           continue
         }
+        if (batchValidationCancelRef.current) throw new BatchValidationCanceled()
         if (progress.status === 'completed' && progress.result) return progress.result
         if (progress.status === 'failed') {
           throw new ApiError(500, progress.error || t('upstreams.batchValidationFailedGeneric'))
@@ -618,6 +633,7 @@ export default function Upstreams() {
     },
     onMutate: () => {
       // Open immediately so a slow upstream cannot look like a dead button.
+      batchValidationCancelRef.current = false
       setBatchValidationResult(null)
       setBatchValidationProgress(null)
       setBatchValidationOpen(true)
@@ -637,10 +653,18 @@ export default function Upstreams() {
       if (!refreshed) toast.add({ title: t('upstreams.batchValidationRefreshFailed'), type: 'warning' })
     },
     onError: error => {
+      if (error instanceof BatchValidationCanceled) return
       const message = batchValidationErrorMessage(error, t)
       if (message) toast.add({ title: t('upstreams.batchValidationFailed', { message }), type: 'error' })
     },
   })
+
+  const cancelBatchValidation = () => {
+    if (!batchValidation.isPending) return
+    batchValidationCancelRef.current = true
+    setBatchValidationOpen(false)
+    toast.add({ title: t('upstreams.batchValidationCanceled'), type: 'info' })
+  }
 
   // Every operation that can change or inspect an upstream shares one row-level
   // busy predicate.  The backend serializes model probes, so allowing a second
@@ -744,7 +768,7 @@ export default function Upstreams() {
           <p className="text-sm text-muted-foreground">{t('upstreams.subtitle')}</p>
         </div>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-          <Button variant="outline" onClick={() => { if (!batchLocked && !hasPendingAction) batchValidation.mutate() }} disabled={batchLocked || hasPendingAction}>
+          <Button variant="outline" onClick={() => { if (!batchLocked && !hasPendingAction) setBatchValidationConfirmOpen(true) }} disabled={batchLocked || hasPendingAction}>
             <ListChecks className={cn(batchValidation.isPending && 'animate-pulse')} />
             <span>{batchValidation.isPending ? t('upstreams.validatingAll') : t('upstreams.validateAll')}</span>
           </Button>
@@ -1054,6 +1078,9 @@ export default function Upstreams() {
                 </p>
               )}
               <p className="text-xs text-muted-foreground">{t('upstreams.batchValidationRunning')}</p>
+              <Button type="button" variant="outline" className="w-full" onClick={cancelBatchValidation}>
+                {t('upstreams.batchValidationCancel')}
+              </Button>
             </div>
           )}
           {batchValidation.isError && !batchValidation.isPending && (
@@ -1115,6 +1142,21 @@ export default function Upstreams() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setBatchValidationOpen(false)} disabled={batchValidation.isPending}>{t('common.done')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={batchValidationConfirmOpen} onOpenChange={setBatchValidationConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('upstreams.batchValidationConfirmTitle')}</DialogTitle>
+            <DialogDescription>{t('upstreams.batchValidationConfirmDesc')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchValidationConfirmOpen(false)}>{t('common.cancel')}</Button>
+            <Button onClick={() => { setBatchValidationConfirmOpen(false); batchValidation.mutate() }}>
+              {t('upstreams.batchValidationConfirm')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
