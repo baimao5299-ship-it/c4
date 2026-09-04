@@ -10,6 +10,12 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+### Fixed
+
+- Model catalogue discovery now accepts common camelCase/capitalized model
+  identifiers and keyed model maps returned by compatible relays, preventing a
+  successful catalogue from being reported as empty.
+
 ## [v0.0.1-beta.26] - 2026-09-04
 
 ### Fixed

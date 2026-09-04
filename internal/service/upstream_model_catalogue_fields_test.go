@@ -23,6 +23,23 @@ func TestParseUpstreamModelsPayloadAcceptsRelayModelIdentifierFields(t *testing.
 	require.Equal(t, []string{"model-id", "model-name", "model-slug", "canonical-slug"}, models)
 }
 
+func TestParseUpstreamModelsPayloadAcceptsCamelCaseAndKeyedCatalogues(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want []string
+	}{
+		{name: "camel case", body: `{"data":[{"modelId":"gpt-camel"},{"modelName":"claude-camel"},{"ID":"upper-id"}]}`, want: []string{"gpt-camel", "claude-camel", "upper-id"}},
+		{name: "keyed models", body: `{"models":{"gpt-keyed":{"owned_by":"openai"},"claude-keyed":{"owned_by":"anthropic"}}}`, want: []string{"gpt-keyed", "claude-keyed"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			models, recognized := parseUpstreamModelsPayload([]byte(tc.body))
+			require.True(t, recognized)
+			require.ElementsMatch(t, tc.want, models)
+		})
+	}
+}
+
 func TestParseUpstreamModelsPayloadFallsBackWhenPreferredIdentifierIsEmpty(t *testing.T) {
 	body := []byte(`{"data":[
 		{"model_id":"", "id":"usable-id"},

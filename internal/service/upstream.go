@@ -2460,8 +2460,8 @@ func parseUpstreamModelsPagePayload(body []byte) (advertisedModelsPage, bool) {
 			// return both `name` (a human title) and `slug`/`model_id` (the value
 			// accepted by the completion route); selecting the label would make a
 			// manually usable model look unavailable during the real probe.
-			for _, key := range []string{"model_id", "slug", "model", "id", "model_name", "name"} {
-				if candidate, ok := value[key].(string); ok {
+			for _, key := range []string{"model_id", "modelId", "modelID", "slug", "model", "id", "model_name", "modelName", "name", "canonical_name", "canonicalName"} {
+				if candidate, ok := modelCatalogueStringField(value, key); ok {
 					// Some providers include a preferred field with an empty
 					// value and put the actual identifier in a later alias
 					// (for example {"model_id":"", "id":"gpt-x"}).
@@ -2499,6 +2499,34 @@ func parseUpstreamModelsPagePayload(body []byte) (advertisedModelsPage, bool) {
 	}, true
 }
 
+// modelCatalogueStringField accepts the spelling variants emitted by common
+// gateways. JSON field names are case-sensitive, but model catalogues in the
+// wild frequently switch between snake_case, camelCase, and capitalized keys.
+// Keep the fallback exact-after-normalization so unrelated fields are not
+// accidentally selected as a model identifier.
+func modelCatalogueStringField(value map[string]any, wanted string) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	if candidate, ok := value[wanted].(string); ok {
+		return candidate, true
+	}
+	normalize := func(input string) string {
+		input = strings.ToLower(strings.TrimSpace(input))
+		input = strings.NewReplacer("_", "", "-", "").Replace(input)
+		return input
+	}
+	want := normalize(wanted)
+	for key, raw := range value {
+		if normalize(key) != want {
+			continue
+		}
+		candidate, ok := raw.(string)
+		return candidate, ok
+	}
+	return "", false
+}
+
 type modelCatalogueMeta struct {
 	hasMore    bool
 	nextURL    string
@@ -2529,6 +2557,13 @@ func modelCatalogueEntriesAtDepth(root any, depth int) ([]any, modelCatalogueMet
 		if entries, ok := value[key].([]any); ok {
 			return entries, meta, true
 		}
+		// A few OpenAI-compatible relays return a keyed catalogue instead of
+		// an array, for example {"models":{"gpt-4":{"owned_by":"..."}}}.
+		// Convert only maps directly under a catalogue key; arbitrary wrapper
+		// objects remain subject to the recursive array check below.
+		if entries, ok := modelCatalogueMapEntries(value[key]); ok {
+			return entries, meta, true
+		}
 	}
 	if depth >= upstreamModelCatalogueMaxNesting {
 		return nil, modelCatalogueMeta{}, false
@@ -2547,6 +2582,27 @@ func modelCatalogueEntriesAtDepth(root any, depth int) ([]any, modelCatalogueMet
 		}
 	}
 	return nil, modelCatalogueMeta{}, false
+}
+
+func modelCatalogueMapEntries(raw any) ([]any, bool) {
+	items, ok := raw.(map[string]any)
+	if !ok || len(items) == 0 {
+		return nil, false
+	}
+	entries := make([]any, 0, len(items))
+	for modelID, metadata := range items {
+		modelID = strings.TrimSpace(modelID)
+		if modelID == "" {
+			return nil, false
+		}
+		// Pagination and status metadata are not model identifiers. Require a
+		// model-shaped value so {"data":{"has_more":true}} is not accepted.
+		if _, ok := metadata.(map[string]any); !ok {
+			return nil, false
+		}
+		entries = append(entries, map[string]any{"id": modelID})
+	}
+	return entries, true
 }
 
 func mergeModelCatalogueMeta(outer, nested modelCatalogueMeta) modelCatalogueMeta {
