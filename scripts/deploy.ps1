@@ -333,6 +333,10 @@ deploy_ok=1
 # Pass the exact release id to the Compose build without persisting it beside
 # operator-managed secrets. Dockerfile uses this value for `-version` output.
 export C3API_VERSION='__SHA__'
+# Never let a stale IMAGE value from the shared .env hide the binary that was
+# just built. The commit tag is ephemeral (it is not persisted to .env) and
+# makes `docker ps`/inspect identify the exact release used by this transaction.
+export IMAGE='c4:__SHA__'
 ensure_dependency() {
   service="$1"
   if ! container_id=$(single_running_c4_container "$service"); then
