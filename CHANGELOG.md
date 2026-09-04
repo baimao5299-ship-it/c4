@@ -10,6 +10,15 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+### Fixed
+
+- Usage extraction now records cache-creation tokens from both Responses and
+  Chat-compatible relays, including flat `cache_creation_input_tokens` and
+  nested `cache_creation.input_tokens` fields. Upstream cost estimates can
+  therefore apply the configured provider multiplier (for example `0.85x`)
+  to the complete official-price usage instead of silently undercounting cache
+  writes.
+
 ## [v0.0.1-beta.25] - 2026-09-04
 
 ### Fixed

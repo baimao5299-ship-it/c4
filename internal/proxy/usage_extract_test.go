@@ -150,6 +150,27 @@ func TestResponsesStreamUsageSupportsTopLevelRelayShape(t *testing.T) {
 	require.Equal(t, usageTuple{it: 3, ot: 8, tt: 11}, u, "missing totals are derived after both shapes are merged")
 }
 
+func TestUsageExtractAcceptsFlatCacheCreationAliases(t *testing.T) {
+	flat := []byte(`{"usage":{"input_tokens":5906,"output_tokens":282,"total_tokens":6188,"input_tokens_details":{"cached_tokens":118200},"cache_creation_input_tokens":63400}}`)
+	u, ok := responsesTopLevelUsage(flat)
+	require.True(t, ok)
+	require.Equal(t, int64(0), u.it, "缓存读大于输入时输入归零")
+	require.Equal(t, int64(282), u.ot)
+	require.Equal(t, int64(6188), u.tt)
+	require.Equal(t, int64(118200), u.cr)
+	require.Equal(t, int64(63400), u.cc, "扁平 cache_creation_input_tokens 必须参与计费")
+
+	chat := []byte(`{"usage":{"prompt_tokens":5906,"completion_tokens":282,"total_tokens":6188,"cache_write_input_tokens":63400}}`)
+	u, ok = chatStreamUsage(chat)
+	require.True(t, ok)
+	require.Equal(t, int64(63400), u.cc)
+
+	nested := []byte(`{"usage":{"cache_creation":{"input_tokens":63400}}}`)
+	u, ok = responsesTopLevelUsage(nested)
+	require.True(t, ok)
+	require.Equal(t, int64(63400), u.cc, "cache_creation.input_tokens 兼容形态")
+}
+
 func TestAnthropicDeltaUsagePreservesPresence(t *testing.T) {
 	u, ok := anthropicDeltaUsage([]byte(`{"type":"message_delta","usage":{"output_tokens":9}}`))
 	require.True(t, ok)

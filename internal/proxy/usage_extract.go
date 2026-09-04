@@ -22,15 +22,31 @@ import (
 // 拆分独立函数以便用真实上游 JSON 构造单测（评审 I-1：不得结构体
 // marshal 自证）。
 
-// cacheCreationFromRaw 从 usage 原始 JSON 聚合缓存写入 token：OpenAI 的
-// cache_creation.ephemeral_5m/1h_input_tokens 两个 TTL 桶求和。SDK 不解析
-// cache_creation 对象（v1.12.0 结构体无此字段），必须走 RawJSON() 的
-// 上游原始字节（评审 I-1 方案）。
+// cacheCreationFromRaw 从 usage 原始 JSON 聚合缓存写入 token。上游实现并不
+// 统一字段形态：OpenAI 兼容响应常用 cache_creation 的 TTL 桶，Anthropic
+// 兼容 relay 常用 cache_creation_input_tokens/cache_write_input_tokens，另有
+// relay 会把 input_tokens 放在 cache_creation 对象中。统一走这个 helper，
+// 避免某一种协议路径把缓存写入静默记成 0。
 func cacheCreationFromRaw(raw string) int64 {
-	return addUsageTokens(
+	cc := addUsageTokens(
 		gjson.Get(raw, "cache_creation.ephemeral_5m_input_tokens").Int(),
 		gjson.Get(raw, "cache_creation.ephemeral_1h_input_tokens").Int(),
 	)
+	if cc > 0 {
+		return cc
+	}
+	for _, path := range []string{
+		"cache_creation_input_tokens",
+		"cache_write_input_tokens",
+		"cache_creation.input_tokens",
+		"cache_creation.tokens",
+		"cache_creation_tokens",
+	} {
+		if n := gjson.Get(raw, path).Int(); n > 0 {
+			return n
+		}
+	}
+	return 0
 }
 
 // rawUsageNumber reads the first positive integer from a bounded list of
@@ -299,9 +315,8 @@ func anthropicDeltaUsageCompat(data []byte) (int64, bool) {
 }
 
 // responsesCompletedUsage 流式 response.completed 帧 → 元组 + ok（评审 M2：
-// 前缀 response.usage.*；cr 在 input_tokens_details.cached_tokens；cc 走
-// ephemeral 聚合——Responses 无 cache_creation 对象，恒 0 预期）。显式 null /
-// 缺失 → ok=false（调用方保留此前值）。
+// 前缀 response.usage.*；缓存读写字段按 usageFieldsFromInterval 的兼容矩阵
+// 归一）。显式 null / 缺失 → ok=false（调用方保留此前值）。
 func responsesCompletedUsage(data []byte) (usageTuple, bool) {
 	start, end, ok := scanKeyValue(data, responseKeyBytes)
 	if !ok {
@@ -492,11 +507,44 @@ func usageFieldsFromInterval(raw []byte, itKey, otKey, crKey []byte) usageTuple 
 	if s, e, ok := scanKeyValue(raw, crKey); ok {
 		u.cr = scanFieldInt64(raw[s:e], cachedTokensKeyBytes)
 	}
-	if s, e, ok := scanKeyValue(raw, cacheCreationKeyBytes); ok {
-		u.cc = addUsageTokens(scanFieldInt64(raw[s:e], ephemeral5mKeyBytes), scanFieldInt64(raw[s:e], ephemeral1hKeyBytes))
-	}
+	u.cc = cacheCreationTokensFromInterval(raw)
 	u.it = deductCacheRead(u.it, u.cr)
 	return u
+}
+
+// cacheCreationTokensFromInterval accepts the cache-write spellings emitted by
+// OpenAI-compatible and Anthropic-compatible relays.  The first branch handles
+// the two OpenAI TTL buckets.  Flat aliases are fallbacks, rather than values to
+// add together, because providers sometimes include both an aggregate and a
+// protocol-specific alias in the same usage object.
+func cacheCreationTokensFromInterval(raw []byte) int64 {
+	if s, e, ok := scanKeyValue(raw, cacheCreationKeyBytes); ok {
+		cache := raw[s:e]
+		if n := addUsageTokens(scanFieldInt64(cache, ephemeral5mKeyBytes), scanFieldInt64(cache, ephemeral1hKeyBytes)); n > 0 {
+			return n
+		}
+		for _, key := range [][]byte{cacheCreationInputTokensKeyBytes, cacheWriteInputTokensKeyBytes, inputTokensKeyBytes, cacheCreationTokensKeyBytes} {
+			if n := scanFieldInt64(cache, key); n > 0 {
+				return n
+			}
+		}
+		// A few relays use a scalar cache_creation value instead of an object.
+		if len(cache) > 0 && cache[0] != '{' && cache[0] != '[' {
+			if n := scanIntValue(cache); n > 0 {
+				return n
+			}
+		}
+	}
+	for _, key := range [][]byte{
+		cacheCreationInputTokensKeyBytes,
+		cacheWriteInputTokensKeyBytes,
+		cacheCreationTokensKeyBytes,
+	} {
+		if n := scanFieldInt64(raw, key); n > 0 {
+			return n
+		}
+	}
+	return 0
 }
 
 // scanFieldInt64 定位键值区间并解析 int64（缺失 → 0）。
@@ -581,7 +629,7 @@ func chatUsageFromResponse(u openai.CompletionUsage) (it, ot, tt, cr, cc int64) 
 }
 
 // responsesUsageFromResponse 非流式 Responses 响应用量：同 chat 的
-// 直读 + RawJSON 方案（cc 恒 0 预期——M4）。出口施加 deductCacheRead 归一
+// 直读 + RawJSON 方案。出口施加 deductCacheRead 归一
 // （spec 2026-08-25）——tt 先按原始 in+out 定值再归一 it（数值不变量：归一
 // 不改 total）。
 func responsesUsageFromResponse(u responses.ResponseUsage) (it, ot, tt, cr, cc int64) {
