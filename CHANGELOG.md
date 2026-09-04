@@ -10,6 +10,8 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.26] - 2026-09-04
+
 ### Fixed
 
 - Usage extraction now records cache-creation tokens from both Responses and
