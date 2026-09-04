@@ -857,6 +857,7 @@
     },
     "free": "Free",
     "multiplierLabel": "Price multiplier",
+    "upstreamCostMultiplier": "Cost {{value}}",
     "multiplierHint": "0 = free, 1 = ×1, up to ×10; leave empty to keep current",
     "createMultiplierHint": "0 = free, 1 = ×1, up to ×10; leave empty for ×1 (not set)",
     "createDefaultsHint": "New groups always use the upstream pool. The fields below are prefilled with the defaults (public, ×1 pricing, automatic protocol negotiation) and can be changed here.",

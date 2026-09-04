@@ -30,7 +30,7 @@ import { toast } from '@/components/ui/toast'
 import { formatDateTime } from '@/components/fmt'
 import { cn } from '@/lib/utils'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
-import { formatMultiplierValue, isStorableMultiplier } from '@/lib/multiplier'
+import { formatMultiplierValue, isStorableMultiplier, multiplierFromApi } from '@/lib/multiplier'
 import { ModelValidationProgress } from '@/components/model-validation-progress'
 import { SortableOrderPanel } from '@/components/sortable-list'
 import type { TFunction } from 'i18next'
@@ -90,10 +90,6 @@ function serializeUpstreamMembers(drafts: UpstreamMemberDraft[]): GroupUpstreamI
     if (!Number.isInteger(maxConcurrency) || maxConcurrency < 1 || maxConcurrency > 100_000) throw new Error('Max concurrency must be an integer from 1 to 100000')
     return { upstream_id: draft.upstream_id, priority, weight, max_concurrency: maxConcurrency, enabled: draft.enabled }
   })
-}
-
-function hasUsableUpstreamModelSnapshot(upstream: Upstream): boolean {
-  return upstream.ModelsCheckedAt != null && Array.isArray(upstream.Models) && upstream.Models.length > 0
 }
 
 function UpstreamPoolFields({
@@ -192,6 +188,9 @@ function UpstreamPoolFields({
                       <div className="flex items-center gap-2 text-sm">
                         <Checkbox checked={selected.has(id)} disabled={!selected.has(id) && upstream.Status !== 'active'} onCheckedChange={checked => onToggle(id, checked === true)} />
                         <span className="min-w-0 flex-1 truncate font-medium" title={upstream.Name}>{upstream.Name || `#${id}`}</span>
+                        <Badge variant="secondary" className="shrink-0 text-xs tabular-nums">
+                          {t('groups.upstreamCostMultiplier', { value: formatMultiplierValue(multiplierFromApi(upstream.Multiplier, upstream.MultiplierBP)) })}
+                        </Badge>
                         <span className="text-xs text-muted-foreground">#{id}</span>
                         {upstream.Status !== 'active' && <Badge variant="outline" className="text-xs">{t('groups.upstreamDisabled')}</Badge>}
                         {member && showMemberOptions && <Switch checked={member.enabled} onCheckedChange={enabled => onUpdate(id, { enabled })} aria-label={t(member.enabled ? 'groups.disableMember' : 'groups.enableMember')} />}
@@ -751,13 +750,12 @@ export default function Groups() {
       // The previous successful model set stays routable while the operator
       // retries; only a missing snapshot blocks group setup.
       const incomplete = selected.length !== activeMemberIDs.length || selected.some(upstream => upstream.ModelsCheckedAt == null || (upstream.ModelsError != null && upstream.ModelsError !== 'model_unavailable'))
-      const usable = selected.length === activeMemberIDs.length && selected.every(hasUsableUpstreamModelSnapshot)
       const degraded = selected.some(upstream => upstream.ModelsError === 'model_unavailable')
       // Upstream routing selects any healthy member that advertises the
       // requested model. Keep the catalogue as a union so the UI exposes the
       // same routes the scheduler can actually serve; an intersection here
       // silently hid models supported by only one selected upstream.
-      return { models: union, partial: incomplete, degraded, usable }
+      return { models: union, partial: incomplete, degraded }
     },
     enabled: (createOpen || editTarget != null) && activeMemberIDs.length > 0,
     // This query derives its result from the already-fetched upstream rows;
@@ -767,17 +765,16 @@ export default function Groups() {
   const activeModels = useMemo(() => groupModels.data?.models ?? [], [groupModels.data])
   const activeModelsPartial = groupModels.data?.partial ?? false
   const activeModelsDegraded = groupModels.data?.degraded ?? false
-  const activeModelsUsable = groupModels.data?.usable ?? false
   const canSubmitCreate = createName.trim().length > 0 &&
     createMembers.length > 0 &&
     createAllowedModels.length > 0 &&
     activeModels.length > 0 &&
+    createAllowedModels.every(model => activeModels.includes(model)) &&
     !upstreamRowsLoading &&
     !upstreamRowsError &&
     !groupModels.isLoading &&
     !groupModels.isFetching &&
     !groupModels.isError &&
-    activeModelsUsable &&
     !create.isPending
   useEffect(() => {
     // A member replacement invalidates any allowlist entry that a complete
@@ -796,7 +793,7 @@ export default function Groups() {
     // A new upstream pool starts with the models that were actually read. This
     // keeps an empty allowlist intentional (all common models) while avoiding
     // the dangerous interpretation of an unread/empty catalogue as success.
-    if (!createOpen || createRoutingMode !== 'upstreams' || activeModelsPartial || activeModels.length === 0) return
+    if (!createOpen || createRoutingMode !== 'upstreams' || activeModels.length === 0) return
     // A refreshed catalogue is a meaningful pool change even when the
     // selected upstream IDs stay identical.
     const key = `${activeMemberKey}:${upstreamModelSnapshotKey}`
@@ -1200,7 +1197,7 @@ export default function Groups() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditTarget(null)} disabled={rename.isPending}>{t('common.cancel')}</Button>
-            <Button onClick={() => rename.mutate()} disabled={rename.isPending || !editName.trim() || (editRoutingMode === 'upstreams' && (editMembers.length === 0 || editAllowedModels.length === 0 || !activeModelsUsable || activeModels.length === 0 || groupModels.isLoading || editUpstreamConfig.isLoading || editUpstreamConfig.isError))}>
+            <Button onClick={() => rename.mutate()} disabled={rename.isPending || !editName.trim() || (editRoutingMode === 'upstreams' && (editMembers.length === 0 || editAllowedModels.length === 0 || (!activeModelsPartial && editAllowedModels.some(model => !activeModels.includes(model))) || groupModels.isLoading || editUpstreamConfig.isLoading || editUpstreamConfig.isError))}>
               {rename.isPending ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>

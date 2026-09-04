@@ -857,6 +857,7 @@
     },
     "free": "免费",
     "multiplierLabel": "价格倍率",
+    "upstreamCostMultiplier": "成本倍率 {{value}}",
     "multiplierHint": "0 = 免费，1 = ×1，上限 ×10；留空保持原值",
     "createMultiplierHint": "0 = 免费，1 = ×1，上限 ×10；留空 = ×1（不设置）",
     "createDefaultsHint": "新分组固定使用上游池；下方各项已填入默认值（公开、倍率 ×1、自动协商协议），可直接修改。",

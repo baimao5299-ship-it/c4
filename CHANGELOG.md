@@ -10,6 +10,18 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.25] - 2026-09-04
+
+### Fixed
+
+- Group creation now accepts retained model capabilities when an upstream's
+  latest validation timed out or ended incompletely. Known usable models are
+  selected normally and an incomplete probe remains a warning instead of
+  disabling creation or editing.
+- Upstream choices in the group editor now show their configured cost
+  multiplier, so administrators can compare routing cost while assembling a
+  group.
+
 ## [v0.0.1-beta.24] - 2026-09-04
 
 ### Added
