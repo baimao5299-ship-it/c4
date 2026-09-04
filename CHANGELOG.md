@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.0.1-beta.37] - 2026-09-05
+
+### Fixed
+
+- Use a non-streaming Chat probe when a WebSocket-only Responses route times
+  out, matching relays that support Chat for the model but stall streamed calls.
+
 ## [v0.0.1-beta.36] - 2026-09-05
 
 ### Fixed
