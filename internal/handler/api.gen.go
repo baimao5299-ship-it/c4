@@ -41,6 +41,13 @@ const (
 	UpstreamUnavailable AccountUsageItemUpstreamError = "upstream_unavailable"
 )
 
+// Defines values for BalanceLedgerEntryKind.
+const (
+	AdminCredit   BalanceLedgerEntryKind = "admin_credit"
+	Redemption    BalanceLedgerEntryKind = "redemption"
+	ReferralClaim BalanceLedgerEntryKind = "referral_claim"
+)
+
 // Defines values for ErrLogClientIPSource.
 const (
 	ErrLogClientIPSourceCfConnectingIp ErrLogClientIPSource = "cf_connecting_ip"
@@ -817,6 +824,37 @@ type BalanceAdjustmentRequest struct {
 
 	// Note 管理员操作备注
 	Note *string `json:"note,omitempty"`
+}
+
+// BalanceLedgerEntry defines model for BalanceLedgerEntry.
+type BalanceLedgerEntry struct {
+	// ActorUserId 执行管理员用户 ID；系统操作为 null
+	ActorUserId *int64 `json:"actor_user_id"`
+
+	// BalanceAfter 变更后余额 USD
+	BalanceAfter float64 `json:"balance_after"`
+
+	// BalanceBefore 变更前余额 USD
+	BalanceBefore float64   `json:"balance_before"`
+	CreatedAt     time.Time `json:"created_at"`
+
+	// Delta 余额变更 USD
+	Delta          float64                `json:"delta"`
+	Id             int64                  `json:"id"`
+	IdempotencyKey string                 `json:"idempotency_key"`
+	Kind           BalanceLedgerEntryKind `json:"kind"`
+	Note           *string                `json:"note"`
+	SourceId       string                 `json:"source_id"`
+	UserId         int64                  `json:"user_id"`
+}
+
+// BalanceLedgerEntryKind defines model for BalanceLedgerEntry.Kind.
+type BalanceLedgerEntryKind string
+
+// BalanceLedgerListResponse defines model for BalanceLedgerListResponse.
+type BalanceLedgerListResponse struct {
+	Rows  []BalanceLedgerEntry `json:"rows"`
+	Total int64                `json:"total"`
 }
 
 // BatchDeactivateRequest defines model for BatchDeactivateRequest.
@@ -1666,6 +1704,22 @@ type RedemptionUseListResponse struct {
 	Total int64           `json:"total"`
 }
 
+// ReferralRecord defines model for ReferralRecord.
+type ReferralRecord struct {
+	CreatedAt    time.Time `json:"created_at"`
+	Id           int64     `json:"id"`
+	InviteeEmail string    `json:"invitee_email"`
+	InviteeId    int64     `json:"invitee_id"`
+	InviterEmail string    `json:"inviter_email"`
+	InviterId    int64     `json:"inviter_id"`
+}
+
+// ReferralRecordListResponse defines model for ReferralRecordListResponse.
+type ReferralRecordListResponse struct {
+	Rows  []ReferralRecord `json:"rows"`
+	Total int64            `json:"total"`
+}
+
 // ReorderRequest defines model for ReorderRequest.
 type ReorderRequest struct {
 	// Ids 当前页面按拖动后的顺序排列的完整 ID 列表
@@ -2295,6 +2349,18 @@ type UsageLogClientIPSource string
 // UsageLogTargetKind 实际调度目标类型；null = 未选路/历史行
 type UsageLogTargetKind string
 
+// UsageLogRank defines model for UsageLogRank.
+type UsageLogRank struct {
+	// Cost 该实体的费用合计（毫分）
+	Cost int64 `json:"cost"`
+
+	// CostKnown 是否至少有一条请求包含上游成本快照
+	CostKnown    bool   `json:"cost_known"`
+	Id           int64  `json:"id"`
+	Name         string `json:"name"`
+	RequestCount int64  `json:"request_count"`
+}
+
 // UsageLogsSummary defines model for UsageLogsSummary.
 type UsageLogsSummary struct {
 	// AttributedUserCharge 仅上游成本已知行的用户扣费合计（毛利率分母）
@@ -2315,25 +2381,23 @@ type UsageLogsSummary struct {
 	// RequestCount 筛选窗口内的用量请求数
 	RequestCount int64 `json:"RequestCount"`
 
+	// TopGroupsByCost 筛选时间窗内上游成本最高的分组（完整窗口聚合）
+	TopGroupsByCost []UsageLogRank `json:"TopGroupsByCost"`
+
+	// TopGroupsByRequests 筛选时间窗内调用次数最多的分组（完整窗口聚合）
+	TopGroupsByRequests []UsageLogRank `json:"TopGroupsByRequests"`
+
+	// TopUpstreamsByCost 筛选时间窗内上游成本最高的上游（完整窗口聚合）
+	TopUpstreamsByCost []UsageLogRank `json:"TopUpstreamsByCost"`
+
+	// TopUpstreamsByRequests 筛选时间窗内调用次数最多的上游（完整窗口聚合）
+	TopUpstreamsByRequests []UsageLogRank `json:"TopUpstreamsByRequests"`
+
 	// UpstreamCost 已知行的配置倍率上游成本估算合计；无已知行时 null
 	UpstreamCost *int64 `json:"UpstreamCost"`
 
 	// UserCharge 全部筛选行的用户扣费合计（毫分）
 	UserCharge int64 `json:"UserCharge"`
-
-	TopUpstreamsByRequests []UsageLogRank `json:"TopUpstreamsByRequests"`
-	TopUpstreamsByCost     []UsageLogRank `json:"TopUpstreamsByCost"`
-	TopGroupsByRequests    []UsageLogRank `json:"TopGroupsByRequests"`
-	TopGroupsByCost        []UsageLogRank `json:"TopGroupsByCost"`
-}
-
-// UsageLogRank is a complete-window upstream or group ranking entry.
-type UsageLogRank struct {
-	ID           int64  `json:"id"`
-	Name         string `json:"name"`
-	RequestCount int64  `json:"request_count"`
-	Cost         int64  `json:"cost"`
-	CostKnown    bool   `json:"cost_known"`
 }
 
 // User defines model for User.
@@ -2390,8 +2454,10 @@ type UserGroupsResponse struct {
 
 // UserListResponse defines model for UserListResponse.
 type UserListResponse struct {
-	Rows         []User  `json:"rows"`
-	Total        int64   `json:"total"`
+	Rows  []User `json:"rows"`
+	Total int64  `json:"total"`
+
+	// TotalBalance 所有用户当前余额合计（USD）
 	TotalBalance float64 `json:"total_balance"`
 }
 
@@ -2470,6 +2536,13 @@ type GetAccountsUsageParams struct {
 	AccountIds string     `form:"account_ids" json:"account_ids"`
 	From       *time.Time `form:"from,omitempty" json:"from,omitempty"`
 	To         *time.Time `form:"to,omitempty" json:"to,omitempty"`
+}
+
+// GetAdminBalanceLedgerParams defines parameters for GetAdminBalanceLedger.
+type GetAdminBalanceLedgerParams struct {
+	Page     *int   `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int   `form:"page_size,omitempty" json:"page_size,omitempty"`
+	UserId   *int64 `form:"user_id,omitempty" json:"user_id,omitempty"`
 }
 
 // GetErrLogsParams defines parameters for GetErrLogs.
@@ -2618,6 +2691,14 @@ type GetRedemptionUsesParamsSort string
 
 // GetRedemptionUsesParamsOrder defines parameters for GetRedemptionUses.
 type GetRedemptionUsesParamsOrder string
+
+// GetAdminReferralsParams defines parameters for GetAdminReferrals.
+type GetAdminReferralsParams struct {
+	Page      *int   `form:"page,omitempty" json:"page,omitempty"`
+	PageSize  *int   `form:"page_size,omitempty" json:"page_size,omitempty"`
+	InviterId *int64 `form:"inviter_id,omitempty" json:"inviter_id,omitempty"`
+	InviteeId *int64 `form:"invitee_id,omitempty" json:"invitee_id,omitempty"`
+}
 
 // ListRulesParams defines parameters for ListRules.
 type ListRulesParams struct {
@@ -2934,6 +3015,9 @@ type ServerInterface interface {
 	// 读取账号的全部分组 id（编辑回显；不随账号列表返回）
 	// (GET /accounts/{id}/groups)
 	GetAccountsIdGroups(w http.ResponseWriter, r *http.Request, id int64)
+	// 余额流水审计（管理员；包含变更前后余额与操作人）
+	// (GET /balance-ledger)
+	GetAdminBalanceLedger(w http.ResponseWriter, r *http.Request, params GetAdminBalanceLedgerParams)
 	// 错误明细分页查询（err_logs 完整错误面：本地拒绝 + 半异常双轨；status_code/error_type 全值）
 	// (GET /err_logs)
 	GetErrLogs(w http.ResponseWriter, r *http.Request, params GetErrLogsParams)
@@ -3033,6 +3117,9 @@ type ServerInterface interface {
 	// 全部兑换记录（管理审计；支持按兑换码、用户、类型筛选）
 	// (GET /redemption-uses)
 	GetRedemptionUses(w http.ResponseWriter, r *http.Request, params GetRedemptionUsesParams)
+	// 邀请关系审计（管理员；支持邀请人/受邀人筛选）
+	// (GET /referrals)
+	GetAdminReferrals(w http.ResponseWriter, r *http.Request, params GetAdminReferralsParams)
 	// 规则列表（enabled 过滤，priority 升序）
 	// (GET /rules)
 	ListRules(w http.ResponseWriter, r *http.Request, params ListRulesParams)
@@ -3261,6 +3348,12 @@ func (_ Unimplemented) GetAccountsIdGroups(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// 余额流水审计（管理员；包含变更前后余额与操作人）
+// (GET /balance-ledger)
+func (_ Unimplemented) GetAdminBalanceLedger(w http.ResponseWriter, r *http.Request, params GetAdminBalanceLedgerParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // 错误明细分页查询（err_logs 完整错误面：本地拒绝 + 半异常双轨；status_code/error_type 全值）
 // (GET /err_logs)
 func (_ Unimplemented) GetErrLogs(w http.ResponseWriter, r *http.Request, params GetErrLogsParams) {
@@ -3453,6 +3546,12 @@ func (_ Unimplemented) GetRedemptionCodesIdUses(w http.ResponseWriter, r *http.R
 // 全部兑换记录（管理审计；支持按兑换码、用户、类型筛选）
 // (GET /redemption-uses)
 func (_ Unimplemented) GetRedemptionUses(w http.ResponseWriter, r *http.Request, params GetRedemptionUsesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 邀请关系审计（管理员；支持邀请人/受邀人筛选）
+// (GET /referrals)
+func (_ Unimplemented) GetAdminReferrals(w http.ResponseWriter, r *http.Request, params GetAdminReferralsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4122,6 +4221,49 @@ func (siw *ServerInterfaceWrapper) GetAccountsIdGroups(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAccountsIdGroups(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminBalanceLedger operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminBalanceLedger(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAdminBalanceLedgerParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", r.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page_size", r.URL.Query(), &params.PageSize)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "user_id", r.URL.Query(), &params.UserId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminBalanceLedger(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5258,6 +5400,57 @@ func (siw *ServerInterfaceWrapper) GetRedemptionUses(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRedemptionUses(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminReferrals operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminReferrals(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAdminReferralsParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", r.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page_size", r.URL.Query(), &params.PageSize)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "inviter_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "inviter_id", r.URL.Query(), &params.InviterId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "inviter_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "invitee_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "invitee_id", r.URL.Query(), &params.InviteeId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "invitee_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminReferrals(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6967,6 +7160,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/accounts/{id}/groups", wrapper.GetAccountsIdGroups)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/balance-ledger", wrapper.GetAdminBalanceLedger)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/err_logs", wrapper.GetErrLogs)
 	})
 	r.Group(func(r chi.Router) {
@@ -7064,6 +7260,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/redemption-uses", wrapper.GetRedemptionUses)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/referrals", wrapper.GetAdminReferrals)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/rules", wrapper.ListRules)

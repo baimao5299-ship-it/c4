@@ -366,6 +366,10 @@ export class ApiClient {
   getRedemptionCodeUses = (id: number) => this.request<components['schemas']['RedemptionUseListResponse']>(`/redemption-codes/${id}/uses`)
   getRedemptionHistory = (p?: { page?: number; page_size?: number; code_id?: number; user_id?: number; type?: string; sort?: string; order?: 'asc' | 'desc' }) =>
     this.request<components['schemas']['RedemptionHistoryListResponse']>('/redemption-uses', { params: toQuery(p) })
+  getAdminReferrals = (p?: { page?: number; page_size?: number; inviter_id?: number; invitee_id?: number }) =>
+    this.request<components['schemas']['ReferralRecordListResponse']>('/referrals', { params: toQuery(p) })
+  getAdminBalanceLedger = (p?: { page?: number; page_size?: number; user_id?: number }) =>
+    this.request<components['schemas']['BalanceLedgerListResponse']>('/balance-ledger', { params: toQuery(p) })
   // —— 定价（统一 prices API：mode token|call|image 覆盖旧三表）——
   syncPricing = () => this.request<components['schemas']['PricingSyncResponse']>('/pricing/sync', { method: 'POST' })
   syncPricingPreview = () => this.request<components['schemas']['PricingSyncPreviewResponse']>('/pricing/sync/preview', { method: 'POST' })

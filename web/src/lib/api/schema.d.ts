@@ -901,6 +901,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/referrals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 邀请关系审计（管理员；支持邀请人/受邀人筛选） */
+        get: operations["GetAdminReferrals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/balance-ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 余额流水审计（管理员；包含变更前后余额与操作人） */
+        get: operations["GetAdminBalanceLedger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pricing/sync": {
         parameters: {
             query?: never;
@@ -2476,6 +2510,10 @@ export interface components {
         UserListResponse: {
             /** Format: int64 */
             total: number;
+            /**
+             * Format: double
+             * @description 所有用户当前余额合计（USD）
+             */
             total_balance: number;
             rows: components["schemas"]["User"][];
         };
@@ -2988,6 +3026,61 @@ export interface components {
              */
             claimed_amount: number;
             rewards: components["schemas"]["ReferralReward"][];
+        };
+        ReferralRecord: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            inviter_id: number;
+            inviter_email: string;
+            /** Format: int64 */
+            invitee_id: number;
+            invitee_email: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ReferralRecordListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["ReferralRecord"][];
+        };
+        BalanceLedgerEntry: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            user_id: number;
+            /** @enum {string} */
+            kind: "redemption" | "admin_credit" | "referral_claim";
+            source_id: string;
+            note?: string | null;
+            idempotency_key: string;
+            /**
+             * Format: double
+             * @description 余额变更 USD
+             */
+            delta: number;
+            /**
+             * Format: double
+             * @description 变更前余额 USD
+             */
+            balance_before: number;
+            /**
+             * Format: double
+             * @description 变更后余额 USD
+             */
+            balance_after: number;
+            /**
+             * Format: int64
+             * @description 执行管理员用户 ID；系统操作为 null
+             */
+            actor_user_id?: number | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        BalanceLedgerListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["BalanceLedgerEntry"][];
         };
         ReferralClaimRequest: {
             /** @description 客户端生成的领取幂等键 */
@@ -3543,16 +3636,27 @@ export interface components {
              * @description GrossProfit < 0 的已知行数
              */
             LossRequestCount: number;
+            /** @description 筛选时间窗内调用次数最多的上游（完整窗口聚合） */
             TopUpstreamsByRequests: components["schemas"]["UsageLogRank"][];
+            /** @description 筛选时间窗内上游成本最高的上游（完整窗口聚合） */
             TopUpstreamsByCost: components["schemas"]["UsageLogRank"][];
+            /** @description 筛选时间窗内调用次数最多的分组（完整窗口聚合） */
             TopGroupsByRequests: components["schemas"]["UsageLogRank"][];
+            /** @description 筛选时间窗内上游成本最高的分组（完整窗口聚合） */
             TopGroupsByCost: components["schemas"]["UsageLogRank"][];
         };
         UsageLogRank: {
+            /** Format: int64 */
             id: number;
             name: string;
+            /** Format: int64 */
             request_count: number;
+            /**
+             * Format: int64
+             * @description 该实体的费用合计（毫分）
+             */
             cost: number;
+            /** @description 是否至少有一条请求包含上游成本快照 */
             cost_known: boolean;
         };
         UserLogsResponse: {
@@ -5705,6 +5809,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeactivateResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetAdminReferrals: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                inviter_id?: number;
+                invitee_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 邀请关系列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferralRecordListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetAdminBalanceLedger: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                user_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 余额流水列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BalanceLedgerListResponse"];
                 };
             };
             default: components["responses"]["Error"];

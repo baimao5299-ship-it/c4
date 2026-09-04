@@ -137,7 +137,7 @@ func toAPILogRanks(rows []*repository.UsageLogRank) []UsageLogRank {
 		if row == nil {
 			continue
 		}
-		out = append(out, UsageLogRank{ID: row.ID, Name: row.Name, RequestCount: row.RequestCount, Cost: row.Cost, CostKnown: row.CostKnown})
+		out = append(out, UsageLogRank{Id: row.ID, Name: row.Name, RequestCount: row.RequestCount, Cost: row.Cost, CostKnown: row.CostKnown})
 	}
 	return out
 }

@@ -1194,6 +1194,41 @@ paths:
               schema: { $ref: '#/components/schemas/DeactivateResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /referrals:
+    get:
+      operationId: GetAdminReferrals
+      tags: [users]
+      summary: 邀请关系审计（管理员；支持邀请人/受邀人筛选）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
+        - { name: inviter_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: invitee_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        '200':
+          description: 邀请关系列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferralRecordListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /balance-ledger:
+    get:
+      operationId: GetAdminBalanceLedger
+      tags: [users]
+      summary: 余额流水审计（管理员；包含变更前后余额与操作人）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
+        - { name: user_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        '200':
+          description: 余额流水列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BalanceLedgerListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   /pricing/sync:
     post:
       operationId: PostPricingSync
@@ -3351,6 +3386,47 @@ components:
         rewards:
           type: array
           items: { $ref: '#/components/schemas/ReferralReward' }
+    ReferralRecord:
+      type: object
+      required: [id, inviter_id, inviter_email, invitee_id, invitee_email, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        inviter_id: { type: integer, format: int64 }
+        inviter_email: { type: string }
+        invitee_id: { type: integer, format: int64 }
+        invitee_email: { type: string }
+        created_at: { type: string, format: date-time }
+    ReferralRecordListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/ReferralRecord' }
+    BalanceLedgerEntry:
+      type: object
+      required: [id, user_id, kind, source_id, idempotency_key, delta, balance_before, balance_after, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        user_id: { type: integer, format: int64 }
+        kind: { type: string, enum: [redemption, admin_credit, referral_claim] }
+        source_id: { type: string }
+        note: { type: string, nullable: true }
+        idempotency_key: { type: string }
+        delta: { type: number, format: double, description: 余额变更 USD }
+        balance_before: { type: number, format: double, description: 变更前余额 USD }
+        balance_after: { type: number, format: double, description: 变更后余额 USD }
+        actor_user_id: { type: integer, format: int64, nullable: true, description: 执行管理员用户 ID；系统操作为 null }
+        created_at: { type: string, format: date-time }
+    BalanceLedgerListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/BalanceLedgerEntry' }
     ReferralClaimRequest:
       type: object
       required: [request_id]
