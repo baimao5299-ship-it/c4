@@ -2836,7 +2836,7 @@ func sendUpstreamModelProbeWithPreferredShape(ctx context.Context, client *http.
 	// WebSocket endpoint. The validator marks that transport mismatch once per
 	// upstream; skip the doomed HTTP POST and probe the model through Chat.
 	if responsesProbeRouteIsDisabled(ctx) {
-		status, requestErr := sendUpstreamChatProbeShape(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model, shape)
+		status, requestErr := sendUpstreamChatProbeShape(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model, responsesProbeCanonical)
 		return status, domain.FormatOpenAIChat, requestErr
 	}
 	format := domain.FormatOpenAIResponses
@@ -2856,7 +2856,7 @@ func sendUpstreamModelProbeWithPreferredShape(ctx context.Context, client *http.
 			if state, ok := ctx.Value(responsesProbeRouteStateKey{}).(*responsesProbeRouteState); ok && state != nil {
 				state.disabled.Store(true)
 			}
-			status, requestErr = sendUpstreamChatProbeShape(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model, shape)
+			status, requestErr = sendUpstreamChatProbeShape(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model, responsesProbeCanonical)
 			return status, domain.FormatOpenAIChat, requestErr
 		}
 	}
