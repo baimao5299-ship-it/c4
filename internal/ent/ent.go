@@ -14,6 +14,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/accountext"
+	"github.com/is7qin/c3api/internal/ent/balanceledger"
 	"github.com/is7qin/c3api/internal/ent/emailtemplate"
 	"github.com/is7qin/c3api/internal/ent/errlog"
 	"github.com/is7qin/c3api/internal/ent/group"
@@ -24,6 +25,8 @@ import (
 	"github.com/is7qin/c3api/internal/ent/pricevariant"
 	"github.com/is7qin/c3api/internal/ent/redemptioncode"
 	"github.com/is7qin/c3api/internal/ent/redemptionuse"
+	"github.com/is7qin/c3api/internal/ent/referral"
+	"github.com/is7qin/c3api/internal/ent/referralreward"
 	"github.com/is7qin/c3api/internal/ent/rule"
 	"github.com/is7qin/c3api/internal/ent/setting"
 	"github.com/is7qin/c3api/internal/ent/tempbalance"
@@ -96,6 +99,7 @@ func checkColumn(t, c string) error {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			account.Table:         account.ValidColumn,
 			accountext.Table:      accountext.ValidColumn,
+			balanceledger.Table:   balanceledger.ValidColumn,
 			emailtemplate.Table:   emailtemplate.ValidColumn,
 			errlog.Table:          errlog.ValidColumn,
 			group.Table:           group.ValidColumn,
@@ -106,6 +110,8 @@ func checkColumn(t, c string) error {
 			pricevariant.Table:    pricevariant.ValidColumn,
 			redemptioncode.Table:  redemptioncode.ValidColumn,
 			redemptionuse.Table:   redemptionuse.ValidColumn,
+			referral.Table:        referral.ValidColumn,
+			referralreward.Table:  referralreward.ValidColumn,
 			rule.Table:            rule.ValidColumn,
 			setting.Table:         setting.ValidColumn,
 			tempbalance.Table:     tempbalance.ValidColumn,

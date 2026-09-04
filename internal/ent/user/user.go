@@ -27,6 +27,8 @@ const (
 	FieldMaxConcurrency = "max_concurrency"
 	// FieldBalance holds the string denoting the balance field in the database.
 	FieldBalance = "balance"
+	// FieldInviteCode holds the string denoting the invite_code field in the database.
+	FieldInviteCode = "invite_code"
 	// FieldTokenVersion holds the string denoting the token_version field in the database.
 	FieldTokenVersion = "token_version"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -73,6 +75,7 @@ var Columns = []string{
 	FieldStatus,
 	FieldMaxConcurrency,
 	FieldBalance,
+	FieldInviteCode,
 	FieldTokenVersion,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -191,6 +194,11 @@ func ByMaxConcurrency(opts ...sql.OrderTermOption) OrderOption {
 // ByBalance orders the results by the balance field.
 func ByBalance(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBalance, opts...).ToFunc()
+}
+
+// ByInviteCode orders the results by the invite_code field.
+func ByInviteCode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInviteCode, opts...).ToFunc()
 }
 
 // ByTokenVersion orders the results by the token_version field.

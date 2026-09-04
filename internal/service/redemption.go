@@ -68,19 +68,16 @@ func validateGenerateRequest(req GenerateRequest) error {
 	return nil
 }
 
-// codeCharset 兑换码字符集（32 字符）：大写 A-Z 去 I/O + 数字 2-9 去 0/1
-// （防形似混淆）——16 字符熵 ~80bit（决策 3 数据模型；用户拍板升级：12→16 字符）。
-const codeCharset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+// codeCharset is deliberately letters-only. Twelve uniformly random letters
+// provide about 56 bits of entropy; the unique index and bounded retry close
+// the collision path without introducing predictable identifiers.
+const codeCharset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-// randomCode 生成单码（格式 XXXX-XXXX-XXXX-XXXX，crypto/rand 不可预测——码可兑换
+// randomCode 生成单码（12 位纯英文，crypto/rand 不可预测——码可兑换
 // 真实资源，禁用可预测的 math/rand）。
 func randomCode() (string, error) {
-	b := make([]byte, 19)
+	b := make([]byte, 12)
 	for i := 0; i < len(b); i++ {
-		if i == 4 || i == 9 || i == 14 {
-			b[i] = '-'
-			continue
-		}
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(codeCharset))))
 		if err != nil {
 			return "", err
@@ -268,9 +265,31 @@ func (s *Service) DeactivateCodesBatch(ctx context.Context, ids []int64) (int64,
 	return s.store.DeactivateCodes(ctx, ids)
 }
 
+// DeactivateLegacyCodes clears old issued inventory without deleting its
+// redemption history. It is intended for the one-time format migration.
+func (s *Service) DeactivateLegacyCodes(ctx context.Context) (int64, error) {
+	store, ok := s.store.(interface {
+		DeactivateLegacyCodes(context.Context) (int64, error)
+	})
+	if !ok {
+		return 0, errors.New("legacy code cleanup is not available")
+	}
+	return store.DeactivateLegacyCodes(ctx)
+}
+
+func (s *Service) DeactivateAllActiveCodes(ctx context.Context) (int64, error) {
+	store, ok := s.store.(interface {
+		DeactivateAllActiveCodes(context.Context) (int64, error)
+	})
+	if !ok {
+		return 0, errors.New("redemption inventory reset is not available")
+	}
+	return store.DeactivateAllActiveCodes(ctx)
+}
+
 // applyFunc 兑换资源应用函数：只经 tx 面（repository.TxStore）操作——评审 I-1：
 // 任一步失败（含 use 冲突/计数用尽）整体回滚（余额/并发不变）。
-type applyFunc func(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) error
+type applyFunc func(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) (*domain.BalanceLedgerEntry, error)
 
 // appliers 类型 → applier 注册表（决策 1）：新类型 = 注册新 applier，兑换编排零改动。
 var appliers = map[domain.RedemptionType]applyFunc{
@@ -281,42 +300,47 @@ var appliers = map[domain.RedemptionType]applyFunc{
 }
 
 // applyBalance 余额累加：users.balance += value（原子 SQL，无读改写——评审 I-1）。
-func applyBalance(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) error {
-	return tx.UpdateUserBalance(ctx, userID, c.Value)
+func applyBalance(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) (*domain.BalanceLedgerEntry, error) {
+	if creditor, ok := tx.(interface {
+		ApplyBalanceCredit(context.Context, int64, int64, domain.BalanceLedgerKind, string, *string, *int64) (*domain.BalanceLedgerEntry, error)
+	}); ok {
+		return creditor.ApplyBalanceCredit(ctx, userID, c.Value, domain.BalanceLedgerRedemption, fmt.Sprintf("code:%d", c.ID), nil, nil)
+	}
+	return nil, tx.UpdateUserBalance(ctx, userID, c.Value)
 }
 
 // applyConcurrency 并发上限（决策 2）：0 = 不限特判——当前 0 直接设为 value，
 // 非 0 累加（0 语义在 SQL CASE 内，单语句无读改写——评审 I-1）。
-func applyConcurrency(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) error {
-	return tx.UpdateUserMaxConcurrency(ctx, userID, int(c.Value))
+func applyConcurrency(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) (*domain.BalanceLedgerEntry, error) {
+	return nil, tx.UpdateUserMaxConcurrency(ctx, userID, int(c.Value))
 }
 
 // applyTempBalance 临时额度（决策 4）：插入 TempBalance 行（amount=value，
 // expires_at=resource_expires_at，note="redemption code"）。
 // resource_expires_at 缺失 = 数据异常，按无效码 400 处理。
-func applyTempBalance(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) error {
+func applyTempBalance(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) (*domain.BalanceLedgerEntry, error) {
 	if c.ResourceExpiresAt == nil {
-		return fmt.Errorf("%w: invalid code", ErrInvalidInput)
+		return nil, fmt.Errorf("%w: invalid code", ErrInvalidInput)
 	}
 	note := "redemption code"
-	return tx.CreateTempBalance(ctx, userID, c.Value, c.ResourceExpiresAt, &note)
+	return nil, tx.CreateTempBalance(ctx, userID, c.Value, c.ResourceExpiresAt, &note)
 }
 
 // applyScopedTempBalance inserts an activity allowance restricted to one group.
 // The optional interface keeps old transaction fakes/integrations source-compatible;
 // production Repository implements it on both normal and transactional clients.
-func applyScopedTempBalance(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) error {
+func applyScopedTempBalance(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) (*domain.BalanceLedgerEntry, error) {
 	if c.ResourceExpiresAt == nil || c.GroupID == nil || *c.GroupID <= 0 {
-		return fmt.Errorf("%w: invalid scoped code", ErrInvalidInput)
+		return nil, fmt.Errorf("%w: invalid scoped code", ErrInvalidInput)
 	}
 	note := "activity redemption code"
 	creator, ok := tx.(interface {
 		CreateTempBalanceForGroup(context.Context, int64, int64, *time.Time, *string, *int64) error
 	})
 	if !ok {
-		return fmt.Errorf("%w: scoped balance storage unavailable", ErrInvalidInput)
+		return nil, fmt.Errorf("%w: scoped balance storage unavailable", ErrInvalidInput)
 	}
-	return creator.CreateTempBalanceForGroup(ctx, userID, c.Value, c.ResourceExpiresAt, &note, c.GroupID)
+	return nil, creator.CreateTempBalanceForGroup(ctx, userID, c.Value, c.ResourceExpiresAt, &note, c.GroupID)
 }
 
 // Redeem 兑换（/api/user/redemptions POST，决策 7/10-12 编排）：
@@ -353,13 +377,19 @@ func (s *Service) Redeem(ctx context.Context, code string, userID int64) (*domai
 		if !ok {
 			return fmt.Errorf("%w: invalid code", ErrInvalidInput)
 		}
-		if err := fn(ctx, tx, userID, c); err != nil {
+		balanceEntry, err := fn(ctx, tx, userID, c)
+		if err != nil {
 			return mapRepoErr(err)
 		}
-		if err := tx.CreateUse(ctx, &domain.RedemptionUse{
+		use := &domain.RedemptionUse{
 			CodeID: c.ID, UserID: userID, Value: c.Value,
 			ResourceExpiresAt: c.ResourceExpiresAt, GroupID: c.GroupID,
-		}); err != nil {
+		}
+		if balanceEntry != nil {
+			use.BalanceBefore = &balanceEntry.BalanceBefore
+			use.BalanceAfter = &balanceEntry.BalanceAfter
+		}
+		if err := tx.CreateUse(ctx, use); err != nil {
 			return mapRepoErr(err) // (code_id,user_id) 唯一冲突 → 409（DB 兜底幂等）
 		}
 		ok, err = tx.IncrementUsed(ctx, c.ID)

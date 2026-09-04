@@ -67,6 +67,20 @@ const (
 	TempBalance       RedemptionType = "temp_balance"
 )
 
+// Defines values for ReferralRewardSourceType.
+const (
+	AdminCredit ReferralRewardSourceType = "admin_credit"
+	Redemption  ReferralRewardSourceType = "redemption"
+)
+
+// Defines values for ReferralRewardStatus.
+const (
+	Claimable ReferralRewardStatus = "claimable"
+	Claimed   ReferralRewardStatus = "claimed"
+	Frozen    ReferralRewardStatus = "frozen"
+	Reversed  ReferralRewardStatus = "reversed"
+)
+
 // Defines values for RequestFormat.
 const (
 	Anthropic         RequestFormat = "anthropic"
@@ -261,10 +275,15 @@ type RedeemResponse struct {
 
 // RedemptionRecord defines model for RedemptionRecord.
 type RedemptionRecord struct {
-	Code      string         `json:"Code"`
-	CodeID    int64          `json:"CodeID"`
-	CodeType  RedemptionType `json:"CodeType"`
-	CreatedAt time.Time      `json:"CreatedAt"`
+	// BalanceAfter 永久余额兑换后的用户余额 USD；其他类型为 null
+	BalanceAfter *float64 `json:"BalanceAfter"`
+
+	// BalanceBefore 永久余额兑换前的用户余额 USD；其他类型为 null
+	BalanceBefore *float64       `json:"BalanceBefore"`
+	Code          string         `json:"Code"`
+	CodeID        int64          `json:"CodeID"`
+	CodeType      RedemptionType `json:"CodeType"`
+	CreatedAt     time.Time      `json:"CreatedAt"`
 
 	// GroupID 活动额度限定分组快照
 	GroupID           *int64     `json:"GroupID"`
@@ -284,6 +303,53 @@ type RedemptionRecordListResponse struct {
 
 // RedemptionType defines model for RedemptionType.
 type RedemptionType string
+
+// ReferralClaimRequest defines model for ReferralClaimRequest.
+type ReferralClaimRequest struct {
+	// RequestId 客户端生成的领取幂等键
+	RequestId string `json:"request_id"`
+}
+
+// ReferralReward defines model for ReferralReward.
+type ReferralReward struct {
+	AvailableAt time.Time `json:"available_at"`
+
+	// BaseAmount 触发返利的实际入账金额 USD
+	BaseAmount float64    `json:"base_amount"`
+	ClaimedAt  *time.Time `json:"claimed_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Id         int64      `json:"id"`
+
+	// InviteeEmail 被邀请用户邮箱
+	InviteeEmail string `json:"invitee_email"`
+
+	// RewardAmount 5% 返利金额 USD
+	RewardAmount float64                  `json:"reward_amount"`
+	SourceType   ReferralRewardSourceType `json:"source_type"`
+	Status       ReferralRewardStatus     `json:"status"`
+}
+
+// ReferralRewardSourceType defines model for ReferralReward.SourceType.
+type ReferralRewardSourceType string
+
+// ReferralRewardStatus defines model for ReferralReward.Status.
+type ReferralRewardStatus string
+
+// ReferralSummary defines model for ReferralSummary.
+type ReferralSummary struct {
+	// ClaimableAmount 已满 24 小时待领取返利 USD
+	ClaimableAmount float64 `json:"claimable_amount"`
+
+	// ClaimedAmount 历史已领取返利 USD
+	ClaimedAmount float64 `json:"claimed_amount"`
+
+	// FrozenAmount 未满 24 小时的返利 USD
+	FrozenAmount float64          `json:"frozen_amount"`
+	InviteCode   string           `json:"invite_code"`
+	InviteLink   string           `json:"invite_link"`
+	InvitedCount int64            `json:"invited_count"`
+	Rewards      []ReferralReward `json:"rewards"`
+}
 
 // RegisterCodeRequest defines model for RegisterCodeRequest.
 type RegisterCodeRequest struct {
@@ -371,10 +437,19 @@ type TempBalancesResponse struct {
 // User defines model for User.
 type User struct {
 	// Balance 余额 USD（浮点；内部存储毫分——1 USD = 100,000 毫分，API 边界换算）
-	Balance        *float64    `json:"Balance,omitempty"`
-	CreatedAt      *time.Time  `json:"CreatedAt,omitempty"`
-	Email          *string     `json:"Email,omitempty"`
-	ID             *int64      `json:"ID,omitempty"`
+	Balance   *float64   `json:"Balance,omitempty"`
+	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
+	Email     *string    `json:"Email,omitempty"`
+	ID        *int64     `json:"ID,omitempty"`
+
+	// InviteCode 当前用户的邀请码；管理列表用于审计
+	InviteCode *string `json:"InviteCode"`
+
+	// InviterEmail 注册时绑定的邀请人邮箱，仅管理端用户列表返回
+	InviterEmail *string `json:"InviterEmail"`
+
+	// InviterID 注册时绑定的邀请人用户 ID
+	InviterID      *int64      `json:"InviterID"`
 	MaxConcurrency *int        `json:"MaxConcurrency,omitempty"`
 	Role           *UserRole   `json:"Role,omitempty"`
 	Status         *UserStatus `json:"Status,omitempty"`
@@ -400,6 +475,9 @@ type UserAuthRegister struct {
 	Code     *string `json:"code,omitempty"`
 	Email    string  `json:"email"`
 	Password string  `json:"password"`
+
+	// ReferralCode 可选邀请码；只在注册时绑定，账号创建后不可补填或修改
+	ReferralCode *string `json:"referral_code,omitempty"`
 }
 
 // UserAuthResponse defines model for UserAuthResponse.
@@ -704,6 +782,9 @@ type PutUserKeysIdJSONRequestBody = KeyUpdate
 // PostUserRedemptionsJSONRequestBody defines body for PostUserRedemptions for application/json ContentType.
 type PostUserRedemptionsJSONRequestBody = RedeemRequest
 
+// PostUserReferralsClaimJSONRequestBody defines body for PostUserReferralsClaim for application/json ContentType.
+type PostUserReferralsClaimJSONRequestBody = ReferralClaimRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// 修改密码（旧密码校验复用登录语义；新密码非空且 ≤72 字节；成功后立即撤销该用户既有 JWT）
@@ -760,6 +841,12 @@ type ServerInterface interface {
 	// 兑换码（400 invalid code：不存在/失效/过期/用尽，统一不泄露细节；409 already redeemed 重复兑换）
 	// (POST /api/user/redemptions)
 	PostUserRedemptions(w http.ResponseWriter, r *http.Request)
+	// 当前用户的邀请码、邀请链接、返利汇总及最近返利记录
+	// (GET /api/user/referrals)
+	GetUserReferrals(w http.ResponseWriter, r *http.Request)
+	// 将全部已满 24 小时的返利原子领取到主余额
+	// (POST /api/user/referrals/claim)
+	PostUserReferralsClaim(w http.ResponseWriter, r *http.Request)
 	// 我的用量统计（强制 user_id = 当前用户）
 	// (GET /api/user/stats)
 	GetUserStats(w http.ResponseWriter, r *http.Request, params GetUserStatsParams)
@@ -883,6 +970,18 @@ func (_ Unimplemented) GetUserRedemptions(w http.ResponseWriter, r *http.Request
 // 兑换码（400 invalid code：不存在/失效/过期/用尽，统一不泄露细节；409 already redeemed 重复兑换）
 // (POST /api/user/redemptions)
 func (_ Unimplemented) PostUserRedemptions(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 当前用户的邀请码、邀请链接、返利汇总及最近返利记录
+// (GET /api/user/referrals)
+func (_ Unimplemented) GetUserReferrals(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 将全部已满 24 小时的返利原子领取到主余额
+// (POST /api/user/referrals/claim)
+func (_ Unimplemented) PostUserReferralsClaim(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1417,6 +1516,34 @@ func (siw *ServerInterfaceWrapper) PostUserRedemptions(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// GetUserReferrals operation middleware
+func (siw *ServerInterfaceWrapper) GetUserReferrals(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserReferrals(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostUserReferralsClaim operation middleware
+func (siw *ServerInterfaceWrapper) PostUserReferralsClaim(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUserReferralsClaim(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUserStats operation middleware
 func (siw *ServerInterfaceWrapper) GetUserStats(w http.ResponseWriter, r *http.Request) {
 
@@ -1824,6 +1951,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/user/redemptions", wrapper.PostUserRedemptions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/user/referrals", wrapper.GetUserReferrals)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/user/referrals/claim", wrapper.PostUserReferralsClaim)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/user/stats", wrapper.GetUserStats)

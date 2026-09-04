@@ -185,6 +185,13 @@ func (s *Service) verifyAndConsume(ctx context.Context, email, purpose, plain st
 
 // RegisterUserWithCode 带验证码校验的注册入口（handler 侧根据 verif 开关分发）。
 func (s *Service) RegisterUserWithCode(ctx context.Context, email, password, code string) (*domain.User, error) {
+	return s.RegisterUserWithCodeAndInvite(ctx, email, password, code, "")
+}
+
+// RegisterUserWithCodeAndInvite keeps the email-code gate and immutable invite
+// binding in one registration path. The invitation is only accepted here;
+// there is no endpoint for an existing user to bind or replace it later.
+func (s *Service) RegisterUserWithCodeAndInvite(ctx context.Context, email, password, code, inviteCode string) (*domain.User, error) {
 	// Check the registration switch before consuming a one-time code. When
 	// registration is disabled, the request must have no side effects; otherwise
 	// an operator toggle could invalidate a valid code without creating a user.
@@ -199,6 +206,10 @@ func (s *Service) RegisterUserWithCode(ctx context.Context, email, password, cod
 	if password == "" || auth.ValidatePasswordLen(password) != nil {
 		return nil, ErrInvalidInput
 	}
+	// Reject an invalid invitation before consuming the one-time email code.
+	if _, err := s.resolveInviter(ctx, inviteCode); err != nil {
+		return nil, err
+	}
 	verifOn := s.settingValue("mail.register_verification") == "true"
 	if verifOn {
 		if code == "" {
@@ -211,7 +222,7 @@ func (s *Service) RegisterUserWithCode(ctx context.Context, email, password, cod
 	// 走既有管线（复用 RegisterUser 逻辑，但已通过校验，直接复用其后续步骤；为避免重复校验，内联调用）
 	// 为保持 bootstrap/默认值/bonus/token 契约，委托给 RegisterUser 的后半段：直接调用 RegisterUser 会重复验 signup/book？
 	// 简化：直接调用 RegisterUser（其内部不再做验证码校验，verif 已处理）
-	return s.RegisterUser(ctx, email, password)
+	return s.RegisterUserWithInvite(ctx, email, password, inviteCode)
 }
 
 // ResetPassword 验证码校验后更新密码。**重置即撤销**（spec 2026-08-25-jwt-

@@ -708,6 +708,7 @@
     "filterEmpty": "没有符合条件的用户",
     "table": {
       "email": "邮箱",
+      "inviter": "邀请人",
       "role": "角色",
       "status": "状态",
       "maxConcurrency": "最大并发",
@@ -722,6 +723,8 @@
     "addBalance": "增加余额",
     "addBalanceDesc": "给用户「{{email}}」增加余额（当前余额不会被覆盖）",
     "balanceAmount": "增加金额（美元）",
+    "balanceNote": "操作备注",
+    "balanceNotePlaceholder": "例如：人工充值、售后补偿",
     "addBalanceConfirm": "确认增加",
     "balanceAdded": "余额已增加",
     "balanceInvalid": "请输入大于 0 的金额",
@@ -1350,6 +1353,7 @@
       "type": "类型",
       "group": "分组",
       "value": "面值",
+      "balanceTrace": "余额变化",
       "resourceExpiresAt": "资源到期",
       "createdAt": "兑换时间"
     },
@@ -1765,7 +1769,10 @@
       "codePlaceholder": "验证码",
       "codeRequired": "请输入验证码",
       "resend": "重发",
-      "verifyButton": "验证并注册"
+      "verifyButton": "验证并注册",
+      "referralLabel": "邀请码（选填）",
+      "referralPlaceholder": "输入邀请人的邀请码",
+      "referralHint": "邀请码只能在注册时绑定，注册完成后不能补填或更换。"
     },
     "nav": {
       "adminSection": "管理台",
@@ -1777,11 +1784,41 @@
       "logs": "消费日志",
       "stats": "统计",
       "redemptions": "充值",
+      "referrals": "邀请返利",
       "tutorial": "使用教程"
     },
     "common": {
       "loading": "加载中…",
       "error": "加载失败"
+    },
+    "referrals": {
+      "title": "邀请返利",
+      "subtitle": "邀请新用户注册并消费，返利在冻结期结束后可领取。",
+      "inviteTitle": "邀请好友",
+      "inviteHint": "让好友通过邀请链接注册，或在注册页填写你的邀请码。",
+      "code": "邀请码",
+      "link": "邀请链接",
+      "copyCode": "复制邀请码",
+      "copyLink": "复制邀请链接",
+      "copyFailed": "复制失败，请长按文字复制",
+      "summary": "返利汇总",
+      "invited": "已邀请用户",
+      "frozen": "冻结中",
+      "claimable": "可领取",
+      "claimedTotal": "已领取",
+      "freezeTitle": "返利需冻结 24 小时",
+      "freezeHint": "被邀请人的有效消费产生返利后先冻结 24 小时；冻结结束自动进入可领取余额。",
+      "claim": "领取返利",
+      "claiming": "领取中…",
+      "claimed": "返利已转入账户余额",
+      "rewards": "返利明细",
+      "rewardsHint": "每笔记录显示来源、计算基数、返利金额和当前状态。",
+      "empty": "还没有返利记录，分享邀请链接开始邀请。",
+      "invitee": "受邀用户",
+      "inviteeId": "受邀用户 #{{id}}",
+      "baseAmount": "基数 {{amount}}",
+      "status": { "frozen": "冻结中", "claimable": "可领取", "claimed": "已领取", "reversed": "已撤销" },
+      "source": { "usage": "消费返利", "redemption": "充值返利", "manual": "人工返利", "admin_credit": "管理员加款返利" }
     },
     "keys": {
       "title": "我的密钥",

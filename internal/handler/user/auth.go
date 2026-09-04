@@ -24,7 +24,11 @@ func (h *UserAPI) PostUserAuthRegister(w http.ResponseWriter, r *http.Request) {
 	if in.Code != nil {
 		code = *in.Code
 	}
-	u, err := h.svc.RegisterUserWithCode(r.Context(), in.Email, in.Password, code)
+	referralCode := ""
+	if in.ReferralCode != nil {
+		referralCode = *in.ReferralCode
+	}
+	u, err := h.svc.RegisterUserWithCodeAndInvite(r.Context(), in.Email, in.Password, code, referralCode)
 	if err != nil {
 		httpface.WriteServiceErr(w, err)
 		return

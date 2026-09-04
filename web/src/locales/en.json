@@ -708,6 +708,7 @@
     "filterEmpty": "No users match the filters",
     "table": {
       "email": "Email",
+      "inviter": "Inviter",
       "role": "Role",
       "status": "Status",
       "maxConcurrency": "Max concurrency",
@@ -722,6 +723,8 @@
     "addBalance": "Add balance",
     "addBalanceDesc": "Add balance for {{email}} without replacing the current amount",
     "balanceAmount": "Amount (USD)",
+    "balanceNote": "Adjustment note",
+    "balanceNotePlaceholder": "For example: manual top-up or service credit",
     "addBalanceConfirm": "Add balance",
     "balanceAdded": "Balance added",
     "balanceInvalid": "Enter an amount greater than 0",
@@ -1350,6 +1353,7 @@
       "type": "Type",
       "group": "Group",
       "value": "Value",
+      "balanceTrace": "Balance change",
       "resourceExpiresAt": "Resource expires",
       "createdAt": "Redeemed at"
     },
@@ -1765,7 +1769,10 @@
       "codePlaceholder": "Verification code",
       "codeRequired": "Code required",
       "resend": "Resend",
-      "verifyButton": "Verify & Register"
+      "verifyButton": "Verify & Register",
+      "referralLabel": "Referral code (optional)",
+      "referralPlaceholder": "Enter your inviter's code",
+      "referralHint": "A referral can only be linked during registration and cannot be added or changed later."
     },
     "nav": {
       "adminSection": "Admin Console",
@@ -1777,11 +1784,41 @@
       "logs": "Usage logs",
       "stats": "Stats",
       "redemptions": "Top up",
+      "referrals": "Referral rewards",
       "tutorial": "Tutorial"
     },
     "common": {
       "loading": "Loading…",
       "error": "Failed to load"
+    },
+    "referrals": {
+      "title": "Referral rewards",
+      "subtitle": "Invite new users and earn rewards from their eligible spending.",
+      "inviteTitle": "Invite friends",
+      "inviteHint": "Ask a friend to register through your link or enter your code on the registration page.",
+      "code": "Referral code",
+      "link": "Referral link",
+      "copyCode": "Copy referral code",
+      "copyLink": "Copy referral link",
+      "copyFailed": "Copy failed. Press and hold the text to copy it.",
+      "summary": "Reward summary",
+      "invited": "Users invited",
+      "frozen": "Frozen",
+      "claimable": "Claimable",
+      "claimedTotal": "Claimed",
+      "freezeTitle": "Rewards are frozen for 24 hours",
+      "freezeHint": "Eligible rewards remain frozen for 24 hours, then become claimable automatically.",
+      "claim": "Claim rewards",
+      "claiming": "Claiming…",
+      "claimed": "Rewards added to your balance",
+      "rewards": "Reward activity",
+      "rewardsHint": "Each row shows its source, calculation base, reward amount, and status.",
+      "empty": "No rewards yet. Share your referral link to get started.",
+      "invitee": "Invited user",
+      "inviteeId": "Invited user #{{id}}",
+      "baseAmount": "Base {{amount}}",
+      "status": { "frozen": "Frozen", "claimable": "Claimable", "claimed": "Claimed", "reversed": "Reversed" },
+      "source": { "usage": "Usage reward", "redemption": "Top-up reward", "manual": "Manual reward", "admin_credit": "Admin credit reward" }
     },
     "keys": {
       "title": "My Keys",

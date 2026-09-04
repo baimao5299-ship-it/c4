@@ -18,17 +18,12 @@ import (
 	userapi "github.com/is7qin/c3api/internal/handler/user"
 )
 
-// validCode 校验码格式（XXXX-XXXX-XXXX-XXXX，字符集 32：大写 A-Z 去 I/O + 数字 2-9 去 0/1）。
+// validCode 校验码格式（12 位大写纯英文）。
 func validCode(t *testing.T, code string) {
 	t.Helper()
-	parts := strings.Split(code, "-")
-	require.Len(t, parts, 4, "code format: %s", code)
-	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	for _, p := range parts {
-		require.Len(t, p, 4, "code segment length: %s", code)
-		for _, ch := range p {
-			require.Contains(t, charset, string(ch), "code charset: %s", code)
-		}
+	require.Len(t, code, 12, "code format: %s", code)
+	for _, ch := range code {
+		require.True(t, ch >= 'A' && ch <= 'Z', "code charset: %s", code)
 	}
 }
 

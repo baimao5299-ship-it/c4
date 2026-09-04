@@ -72,6 +72,8 @@ type RedemptionUse struct {
 	Value             int64 // 兑换时的值快照（毫分；concurrency 类型为并发数）
 	ResourceExpiresAt *time.Time
 	GroupID           *int64
+	BalanceBefore     *int64
+	BalanceAfter      *int64
 	CreatedAt         time.Time
 }
 
@@ -95,6 +97,8 @@ type RedemptionRecord struct {
 	Remark            *string
 	ResourceExpiresAt *time.Time
 	GroupID           *int64
+	BalanceBefore     *int64
+	BalanceAfter      *int64
 	CreatedAt         time.Time
 }
 
@@ -105,10 +109,13 @@ type RedemptionHistory struct {
 	CodeID            int64
 	Code              string
 	UserID            int64
+	UserEmail         string
 	CodeType          RedemptionType
 	Value             int64 // 兑换值快照（毫分；concurrency 类型为并发数）
 	Remark            *string
 	ResourceExpiresAt *time.Time
 	GroupID           *int64
+	BalanceBefore     *int64
+	BalanceAfter      *int64
 	CreatedAt         time.Time
 }

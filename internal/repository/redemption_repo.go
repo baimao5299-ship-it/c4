@@ -7,6 +7,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"unicode"
 
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
@@ -16,6 +17,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent"
 	"github.com/is7qin/c3api/internal/ent/redemptioncode"
 	"github.com/is7qin/c3api/internal/ent/redemptionuse"
+	"github.com/is7qin/c3api/internal/ent/user"
 )
 
 // RedemptionRepo 兑换码 + 兑换审计持久化。
@@ -24,6 +26,44 @@ type RedemptionRepo struct {
 	// driver 为 raw SQL（IncrementUsed 条件递增）用：普通 client 与 tx client
 	// （WithTx 内）均可用——评审 I-1。
 	driver dialect.Driver
+}
+
+// DeactivateLegacyCodes retires every active code that is not the current
+// twelve-letter format. Rows and uses remain intact for attribution/audit.
+func (r *RedemptionRepo) DeactivateLegacyCodes(ctx context.Context) (int64, error) {
+	rows, err := r.client.RedemptionCode.Query().
+		Where(redemptioncode.StatusEQ(redemptioncode.StatusActive)).All(ctx)
+	if err != nil {
+		return 0, err
+	}
+	ids := make([]int64, 0)
+	for _, row := range rows {
+		if !isCurrentCode(row.Code) {
+			ids = append(ids, row.ID)
+		}
+	}
+	return r.DeactivateCodes(ctx, ids)
+}
+
+// DeactivateAllActiveCodes is the explicit one-time inventory reset. It keeps
+// every code and use row for traceability and only prevents future redemption.
+func (r *RedemptionRepo) DeactivateAllActiveCodes(ctx context.Context) (int64, error) {
+	n, err := r.client.RedemptionCode.Update().
+		Where(redemptioncode.StatusEQ(redemptioncode.StatusActive)).
+		SetStatus(redemptioncode.StatusDisabled).Save(ctx)
+	return int64(n), err
+}
+
+func isCurrentCode(code string) bool {
+	if len(code) != 12 {
+		return false
+	}
+	for _, ch := range code {
+		if ch > unicode.MaxASCII || ch < 'A' || ch > 'Z' {
+			return false
+		}
+	}
+	return true
 }
 
 // CreateCodes 批量插入兑换码（单条 INSERT 多 VALUES；全字段 Set，含 status/used_count，
@@ -219,11 +259,26 @@ func (r *RedemptionRepo) ListHistory(ctx context.Context, q ListQuery, codeID, u
 		return nil, 0, err
 	}
 	out := make([]*domain.RedemptionHistory, 0, len(rows))
+	userIDs := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		userIDs = append(userIDs, row.UserID)
+	}
+	emails := make(map[int64]string, len(userIDs))
+	if len(userIDs) > 0 {
+		users, usersErr := r.client.User.Query().Where(user.IDIn(userIDs...)).All(ctx)
+		if usersErr != nil {
+			return nil, 0, usersErr
+		}
+		for _, u := range users {
+			emails[u.ID] = u.Email
+		}
+	}
 	for _, row := range rows {
 		h := &domain.RedemptionHistory{
 			ID: row.ID, CodeID: row.CodeID, UserID: row.UserID,
-			Value: row.Value, ResourceExpiresAt: row.ResourceExpiresAt,
-			GroupID:   row.GroupID,
+			UserEmail: emails[row.UserID],
+			Value:     row.Value, ResourceExpiresAt: row.ResourceExpiresAt,
+			GroupID: row.GroupID, BalanceBefore: row.BalanceBefore, BalanceAfter: row.BalanceAfter,
 			CreatedAt: row.CreatedAt,
 		}
 		if code := row.Edges.Code; code != nil {
@@ -257,7 +312,9 @@ func (r *RedemptionRepo) CreateUse(ctx context.Context, use *domain.RedemptionUs
 		SetCodeID(use.CodeID).
 		SetUserID(use.UserID).
 		SetValue(use.Value).
-		SetNillableGroupID(use.GroupID)
+		SetNillableGroupID(use.GroupID).
+		SetNillableBalanceBefore(use.BalanceBefore).
+		SetNillableBalanceAfter(use.BalanceAfter)
 	if use.ResourceExpiresAt != nil {
 		b = b.SetResourceExpiresAt(*use.ResourceExpiresAt)
 	}
@@ -349,7 +406,8 @@ func toDomainRedemptionCode(c *ent.RedemptionCode) *domain.RedemptionCode {
 func toDomainRedemptionUse(u *ent.RedemptionUse) *domain.RedemptionUse {
 	return &domain.RedemptionUse{
 		ID: u.ID, CodeID: u.CodeID, UserID: u.UserID, Value: u.Value,
-		ResourceExpiresAt: u.ResourceExpiresAt, GroupID: u.GroupID, CreatedAt: u.CreatedAt,
+		ResourceExpiresAt: u.ResourceExpiresAt, GroupID: u.GroupID,
+		BalanceBefore: u.BalanceBefore, BalanceAfter: u.BalanceAfter, CreatedAt: u.CreatedAt,
 	}
 }
 
@@ -357,6 +415,7 @@ func toDomainRedemptionUse(u *ent.RedemptionUse) *domain.RedemptionUse {
 func toDomainRedemptionRecord(u *ent.RedemptionUse) *domain.RedemptionRecord {
 	return &domain.RedemptionRecord{
 		ID: u.ID, CodeID: u.CodeID, Value: u.Value,
-		ResourceExpiresAt: u.ResourceExpiresAt, GroupID: u.GroupID, CreatedAt: u.CreatedAt,
+		ResourceExpiresAt: u.ResourceExpiresAt, GroupID: u.GroupID,
+		BalanceBefore: u.BalanceBefore, BalanceAfter: u.BalanceAfter, CreatedAt: u.CreatedAt,
 	}
 }

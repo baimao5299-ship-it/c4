@@ -7,6 +7,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/mail"
 	"strings"
 	"time"
@@ -33,6 +34,41 @@ var (
 // 快照读 4 个新用户初始资源默认值 → CreateUser → temp_balance > 0 送临时
 // 额度（插行失败不阻断注册，评审 M-2）。
 func (s *Service) RegisterUser(ctx context.Context, email, password string) (*domain.User, error) {
+	return s.RegisterUserWithInvite(ctx, email, password, "")
+}
+
+func (s *Service) resolveInviter(ctx context.Context, inviteCode string) (int64, error) {
+	code := strings.ToUpper(strings.TrimSpace(inviteCode))
+	if code == "" {
+		return 0, nil
+	}
+	if len(code) != 12 {
+		return 0, fmt.Errorf("%w: invalid invite code", ErrInvalidInput)
+	}
+	for _, ch := range code {
+		if ch < 'A' || ch > 'Z' {
+			return 0, fmt.Errorf("%w: invalid invite code", ErrInvalidInput)
+		}
+	}
+	lookup, ok := s.store.(interface {
+		GetUserByInviteCode(context.Context, string) (*domain.User, error)
+	})
+	if !ok {
+		return 0, fmt.Errorf("%w: invite system unavailable", ErrInvalidInput)
+	}
+	inviter, err := lookup.GetUserByInviteCode(ctx, code)
+	if errors.Is(err, repository.ErrNotFound) || inviter == nil {
+		return 0, fmt.Errorf("%w: invalid invite code", ErrInvalidInput)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return inviter.ID, nil
+}
+
+// RegisterUserWithInvite binds an inviter only during account creation. There
+// is deliberately no post-registration bind operation.
+func (s *Service) RegisterUserWithInvite(ctx context.Context, email, password, inviteCode string) (*domain.User, error) {
 	if s.settingValue("signup_enabled") != "true" {
 		return nil, ErrSignupDisabled
 	}
@@ -60,18 +96,35 @@ func (s *Service) RegisterUser(ctx context.Context, email, password string) (*do
 	defer s.signupMu.Unlock()
 	// 新用户初始资源：仅公开注册路径套默认；管理面 CreateUser 显式传值
 	// （用户拍板，0 就是 0）。
+	generatedInviteCode, err := randomLetters12()
+	if err != nil {
+		return nil, err
+	}
 	newUser := &domain.User{
 		Email: email, PasswordHash: hash,
 		Role: domain.RoleUser, Status: domain.UserStatusActive,
 		MaxConcurrency: int(s.settingInt("default_user_max_concurrency")),
 		Balance:        s.settingInt("default_user_balance"),
+		InviteCode:     generatedInviteCode,
+	}
+	inviterID, err := s.resolveInviter(ctx, inviteCode)
+	if err != nil {
+		return nil, err
 	}
 	var created *domain.User
 	allowFirstUserAdmin := true
 	if s.allowFirstUserAdmin != nil {
 		allowFirstUserAdmin = *s.allowFirstUserAdmin
 	}
-	if allowFirstUserAdmin {
+	if inviterID > 0 {
+		creator, ok := s.store.(interface {
+			CreateUserWithReferral(context.Context, *domain.User, int64) (*domain.User, error)
+		})
+		if !ok {
+			return nil, errors.New("referred registration is not available")
+		}
+		created, err = creator.CreateUserWithReferral(ctx, newUser, inviterID)
+	} else if allowFirstUserAdmin {
 		if bootstrap, ok := s.store.(SignupBootstrapStore); ok {
 			// The repository rechecks the user count while holding a transaction
 			// advisory lock, closing the cross-instance first-admin race.
@@ -224,10 +277,14 @@ func (s *Service) CreateUser(ctx context.Context, email, password string, role d
 	if err != nil {
 		return nil, err
 	}
+	inviteCode, err := randomLetters12()
+	if err != nil {
+		return nil, err
+	}
 	created, err := s.store.CreateUser(ctx, &domain.User{
 		Email: email, PasswordHash: hash,
 		Role: role, Status: status,
-		MaxConcurrency: maxConcurrency, Balance: balance,
+		MaxConcurrency: maxConcurrency, Balance: balance, InviteCode: inviteCode,
 	})
 	if err != nil {
 		return nil, err

@@ -16,6 +16,8 @@ type Tx struct {
 	Account *AccountClient
 	// AccountExt is the client for interacting with the AccountExt builders.
 	AccountExt *AccountExtClient
+	// BalanceLedger is the client for interacting with the BalanceLedger builders.
+	BalanceLedger *BalanceLedgerClient
 	// EmailTemplate is the client for interacting with the EmailTemplate builders.
 	EmailTemplate *EmailTemplateClient
 	// ErrLog is the client for interacting with the ErrLog builders.
@@ -36,6 +38,10 @@ type Tx struct {
 	RedemptionCode *RedemptionCodeClient
 	// RedemptionUse is the client for interacting with the RedemptionUse builders.
 	RedemptionUse *RedemptionUseClient
+	// Referral is the client for interacting with the Referral builders.
+	Referral *ReferralClient
+	// ReferralReward is the client for interacting with the ReferralReward builders.
+	ReferralReward *ReferralRewardClient
 	// Rule is the client for interacting with the Rule builders.
 	Rule *RuleClient
 	// Setting is the client for interacting with the Setting builders.
@@ -189,6 +195,7 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.Account = NewAccountClient(tx.config)
 	tx.AccountExt = NewAccountExtClient(tx.config)
+	tx.BalanceLedger = NewBalanceLedgerClient(tx.config)
 	tx.EmailTemplate = NewEmailTemplateClient(tx.config)
 	tx.ErrLog = NewErrLogClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
@@ -199,6 +206,8 @@ func (tx *Tx) init() {
 	tx.PriceVariant = NewPriceVariantClient(tx.config)
 	tx.RedemptionCode = NewRedemptionCodeClient(tx.config)
 	tx.RedemptionUse = NewRedemptionUseClient(tx.config)
+	tx.Referral = NewReferralClient(tx.config)
+	tx.ReferralReward = NewReferralRewardClient(tx.config)
 	tx.Rule = NewRuleClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
 	tx.TempBalance = NewTempBalanceClient(tx.config)

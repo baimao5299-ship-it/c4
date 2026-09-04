@@ -23,6 +23,7 @@ const UserKeys = lazy(() => import('@/pages/user/keys'))
 const UserLogs = lazy(() => import('@/pages/user/logs'))
 const UserStats = lazy(() => import('@/pages/user/stats'))
 const UserRedemptions = lazy(() => import('@/pages/user/redemptions'))
+const UserReferrals = lazy(() => import('@/pages/user/referrals'))
 const UserTutorial = lazy(() => import('@/pages/user/tutorial'))
 const UserProfile = lazy(() => import('@/pages/user/profile'))
 const Forbidden = lazy(() => import('@/pages/forbidden'))
@@ -98,6 +99,7 @@ const router = createBrowserRouter([
           { path: 'logs', element: routeElement(UserLogs) },
           { path: 'stats', element: routeElement(UserStats) },
           { path: 'redemptions', element: routeElement(UserRedemptions) },
+          { path: 'referrals', element: routeElement(UserReferrals) },
           { path: 'tutorial', element: routeElement(UserTutorial) },
         ],
       },

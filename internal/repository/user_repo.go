@@ -15,6 +15,7 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/referral"
 	"github.com/is7qin/c3api/internal/ent/tempbalance"
 	"github.com/is7qin/c3api/internal/ent/user"
 )
@@ -203,6 +204,12 @@ func (r *UserRepo) CreateUser(ctx context.Context, u *domain.User) (*domain.User
 		SetStatus(user.Status(u.Status)).
 		SetMaxConcurrency(u.MaxConcurrency).
 		SetBalance(u.Balance).
+		SetNillableInviteCode(func() *string {
+			if u.InviteCode == "" {
+				return nil
+			}
+			return &u.InviteCode
+		}()).
 		Save(ctx)
 	if err != nil {
 		// email 唯一冲突（并发注册双过 pre-check → 一者撞 23505）→ ErrConflict
@@ -270,7 +277,49 @@ func (r *UserRepo) ListUsers(ctx context.Context, q ListQuery) ([]*domain.User, 
 	for _, row := range rows {
 		out = append(out, toDomainUser(row))
 	}
+	if err := r.enrichInviters(ctx, out); err != nil {
+		return nil, 0, err
+	}
 	return out, int64(total), nil
+}
+
+func (r *UserRepo) enrichInviters(ctx context.Context, users []*domain.User) error {
+	if len(users) == 0 {
+		return nil
+	}
+	inviteeIDs := make([]int64, 0, len(users))
+	byID := make(map[int64]*domain.User, len(users))
+	for _, u := range users {
+		inviteeIDs = append(inviteeIDs, u.ID)
+		byID[u.ID] = u
+	}
+	rels, err := r.client.Referral.Query().Where(referral.InviteeIDIn(inviteeIDs...)).All(ctx)
+	if err != nil {
+		return err
+	}
+	inviterIDs := make([]int64, 0, len(rels))
+	for _, rel := range rels {
+		inviterIDs = append(inviterIDs, rel.InviterID)
+	}
+	if len(inviterIDs) == 0 {
+		return nil
+	}
+	inviterRows, err := r.client.User.Query().Where(user.IDIn(inviterIDs...)).All(ctx)
+	if err != nil {
+		return err
+	}
+	emails := make(map[int64]string, len(inviterRows))
+	for _, inviter := range inviterRows {
+		emails[inviter.ID] = inviter.Email
+	}
+	for _, rel := range rels {
+		if u := byID[rel.InviteeID]; u != nil {
+			id := rel.InviterID
+			u.InviterID = &id
+			u.InviterEmail = emails[id]
+		}
+	}
+	return nil
 }
 
 // UserPatch 用户更新补丁（管理面 PUT patch 语义）：显式字段 = 请求显式提供的

@@ -17,8 +17,8 @@ import (
 	"github.com/is7qin/c3api/internal/repository"
 )
 
-// codeRe 兑换码格式：XXXX-XXXX-XXXX-XXXX，字符集大写 A-Z 去 I/O + 数字 2-9 去 0/1。
-var codeRe = regexp.MustCompile(`^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$`)
+// codeRe 兑换码格式：12 位大写纯英文。
+var codeRe = regexp.MustCompile(`^[A-Z]{12}$`)
 
 // newRedemptionSvc 构造带记录 inv 的 Service（兑换成功后必须刷新 auth 快照）。
 func newRedemptionSvc() (*Service, *fakeStore, *invRecorder) {
@@ -84,7 +84,7 @@ func TestGenerateCodes(t *testing.T) {
 		require.Len(t, codes, 50)
 		seen := make(map[string]bool, 50)
 		for _, c := range codes {
-			require.Regexp(t, codeRe, c.Code, "格式 XXXX-XXXX-XXXX-XXXX + 字符集（A-Z 去 I/O + 2-9 去 0/1）")
+			require.Regexp(t, codeRe, c.Code, "格式必须为 12 位大写纯英文")
 			require.False(t, seen[c.Code], "码必须唯一")
 			seen[c.Code] = true
 			require.Equal(t, domain.RedemptionStatusActive, c.Status)

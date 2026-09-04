@@ -32,6 +32,11 @@ import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
 
 type User = components['schemas']['User']
+type UserWithReferral = User & {
+  InviterID?: number | null
+  InviterEmail?: string | null
+  Inviter?: { ID?: number; Email?: string } | null
+}
 type UserCreate = components['schemas']['UserCreate']
 type UserUpdate = components['schemas']['UserUpdate']
 type UserRole = components['schemas']['UserRole']
@@ -44,6 +49,16 @@ const STATUSES: UserStatus[] = ['active', 'disabled']
 
 // 余额（USD 浮点，已由 API 边界换算）→ $N.NN；空 → —。
 const formatBalance = (b?: number): string => (b == null ? '—' : `$${b.toFixed(2)}`)
+
+function inviterLabel(user: User): string {
+  const value = user as UserWithReferral
+  const email = value.InviterEmail ?? value.Inviter?.Email
+  const id = value.InviterID ?? value.Inviter?.ID
+  if (email && id) return `${email} (#${id})`
+  if (email) return email
+  if (id) return `#${id}`
+  return '—'
+}
 
 // 角色徽章：platform_admin 蓝点（管理面）/ user 灰点（普通用户，与 groups
 // VisibilityBadge 同风格）。
@@ -121,7 +136,7 @@ function toCreateBody(f: UserForm): UserCreate {
     status: f.status,
   }
   if (f.max_concurrency !== '') body.max_concurrency = Number(f.max_concurrency)
-  if (f.balance !== '') body.balance = Number(f.balance)
+  // Balance is changed only through the audited increment dialog.
   return body
 }
 
@@ -133,7 +148,7 @@ function toUpdateBody(f: UserForm): UserUpdate {
     status: f.status,
   }
   if (f.max_concurrency !== '') body.max_concurrency = Number(f.max_concurrency)
-  if (f.balance !== '') body.balance = Number(f.balance)
+  // Balance is changed only through the audited increment dialog.
   return body
 }
 
@@ -229,17 +244,21 @@ export default function Users() {
 
   const [balanceTarget, setBalanceTarget] = useState<User | null>(null)
   const [balanceAmount, setBalanceAmount] = useState('')
+  const [balanceNote, setBalanceNote] = useState('')
+  const [balanceRequestID, setBalanceRequestID] = useState('')
   const addBalance = useMutation({
     mutationFn: async () => {
       const amount = Number(balanceAmount)
       if (!balanceTarget || !Number.isFinite(amount) || amount <= 0) throw new Error(t('users.balanceInvalid'))
-      return api.updateUser(balanceTarget.ID!, { balance: (balanceTarget.Balance ?? 0) + amount })
+      return api.addUserBalance(balanceTarget.ID!, { amount, note: balanceNote.trim(), idempotency_key: balanceRequestID })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] })
       toast.add({ title: t('users.balanceAdded'), type: 'success' })
       setBalanceTarget(null)
       setBalanceAmount('')
+      setBalanceNote('')
+      setBalanceRequestID('')
     },
   })
 
@@ -412,6 +431,7 @@ export default function Users() {
                 <TableRow>
                   <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="email" label={t('users.table.email')} active={activeSort === 'email'} order={order} onToggle={onColumnToggle} />
+                  <TableHead>{t('users.table.inviter')}</TableHead>
                   <SortableHeader field="role" label={t('users.table.role')} active={activeSort === 'role'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="status" label={t('users.table.status')} active={activeSort === 'status'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="max_concurrency" label={t('users.table.maxConcurrency')} active={activeSort === 'max_concurrency'} order={order} onToggle={onColumnToggle} className="text-right [&_button]:justify-end" />
@@ -425,6 +445,7 @@ export default function Users() {
                   <TableRow key={u.ID}>
                     <TableCell className="tabular-nums">{u.ID}</TableCell>
                     <TableCell className="max-w-52 truncate" title={u.Email}>{u.Email}</TableCell>
+                    <TableCell className="max-w-52 truncate text-xs text-muted-foreground" title={inviterLabel(u)}>{inviterLabel(u)}</TableCell>
                     <TableCell><RoleBadge role={u.Role} /></TableCell>
                     <TableCell><StatusBadge status={u.Status} /></TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -435,7 +456,7 @@ export default function Users() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon-sm" title={t('users.tempBalances.button')} onClick={() => setTempUser(u)}><Coins /></Button>
-                        <Button variant="ghost" size="icon-sm" title={t('users.addBalance')} aria-label={t('users.addBalance')} onClick={() => { setBalanceTarget(u); setBalanceAmount(''); addBalance.reset() }}><Plus /></Button>
+                        <Button variant="ghost" size="icon-sm" title={t('users.addBalance')} aria-label={t('users.addBalance')} onClick={() => { setBalanceTarget(u); setBalanceAmount(''); setBalanceNote(''); setBalanceRequestID(globalThis.crypto?.randomUUID?.() ?? `balance-${Date.now()}-${Math.random().toString(36).slice(2)}`); addBalance.reset() }}><Plus /></Button>
                         <Button variant="ghost" size="icon-sm" title={t('users.groups.button')} onClick={() => openGroups(u)}><UsersRound /></Button>
                         <Button
                           variant="ghost"
@@ -517,10 +538,10 @@ export default function Users() {
                 <Input id="usr-max" type="number" min={0} value={form.max_concurrency} onChange={e => setForm(f => ({ ...f, max_concurrency: e.target.value }))} />
                 <p className="text-xs text-muted-foreground">{t('users.maxHint')}</p>
               </div>
-              <div className="space-y-1.5">
+              {!editing && <div className="space-y-1.5">
                 <Label htmlFor="usr-balance">{t('users.balanceLabel')}</Label>
                 <Input id="usr-balance" type="number" min={0} step={0.01} value={form.balance} onChange={e => setForm(f => ({ ...f, balance: e.target.value }))} />
-              </div>
+              </div>}
             </div>
             {save.isError && errMsg(save.error) && (
               <p className="text-sm text-destructive">{errMsg(save.error)}</p>
@@ -538,7 +559,10 @@ export default function Users() {
       <Dialog open={balanceTarget != null} onOpenChange={open => { if (!open && !addBalance.isPending) setBalanceTarget(null) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>{t('users.addBalance')}</DialogTitle><DialogDescription>{t('users.addBalanceDesc', { email: balanceTarget?.Email })}</DialogDescription></DialogHeader>
-          <div className="space-y-1.5"><Label htmlFor="add-balance-amount">{t('users.balanceAmount')}</Label><Input id="add-balance-amount" type="number" min="0.01" step="0.01" value={balanceAmount} onChange={e => setBalanceAmount(e.target.value)} placeholder="10.00" autoFocus /></div>
+          <div className="space-y-3">
+            <div className="space-y-1.5"><Label htmlFor="add-balance-amount">{t('users.balanceAmount')}</Label><Input id="add-balance-amount" type="number" min="0.01" step="0.01" value={balanceAmount} onChange={e => setBalanceAmount(e.target.value)} placeholder="10.00" autoFocus /></div>
+            <div className="space-y-1.5"><Label htmlFor="add-balance-note">{t('users.balanceNote')}</Label><Input id="add-balance-note" value={balanceNote} maxLength={200} onChange={e => setBalanceNote(e.target.value)} placeholder={t('users.balanceNotePlaceholder')} /></div>
+          </div>
           {addBalance.isError && <p className="text-sm text-destructive">{(addBalance.error as Error).message}</p>}
           <DialogFooter><Button variant="outline" onClick={() => setBalanceTarget(null)} disabled={addBalance.isPending}>{t('common.cancel')}</Button><Button onClick={() => addBalance.mutate()} disabled={addBalance.isPending || !(Number(balanceAmount) > 0)}>{addBalance.isPending ? t('common.saving') : t('users.addBalanceConfirm')}</Button></DialogFooter>
         </DialogContent>

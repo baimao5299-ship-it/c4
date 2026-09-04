@@ -697,6 +697,9 @@ type User struct {
 	TokenVersion   int64
 	MaxConcurrency int
 	Balance        int64
+	InviteCode     string
+	InviterID      *int64
+	InviterEmail   string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

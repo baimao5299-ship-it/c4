@@ -29,6 +29,8 @@ type User struct {
 	MaxConcurrency int `json:"max_concurrency,omitempty"`
 	// Balance holds the value of the "balance" field.
 	Balance int64 `json:"balance,omitempty"`
+	// InviteCode holds the value of the "invite_code" field.
+	InviteCode *string `json:"invite_code,omitempty"`
 	// TokenVersion holds the value of the "token_version" field.
 	TokenVersion int64 `json:"token_version,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -88,7 +90,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case user.FieldID, user.FieldMaxConcurrency, user.FieldBalance, user.FieldTokenVersion:
 			values[i] = new(sql.NullInt64)
-		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus:
+		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldInviteCode:
 			values[i] = new(sql.NullString)
 		case user.FieldCreatedAt, user.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -148,6 +150,13 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field balance", values[i])
 			} else if value.Valid {
 				_m.Balance = value.Int64
+			}
+		case user.FieldInviteCode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field invite_code", values[i])
+			} else if value.Valid {
+				_m.InviteCode = new(string)
+				*_m.InviteCode = value.String
 			}
 		case user.FieldTokenVersion:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -235,6 +244,11 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("balance=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Balance))
+	builder.WriteString(", ")
+	if v := _m.InviteCode; v != nil {
+		builder.WriteString("invite_code=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("token_version=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TokenVersion))

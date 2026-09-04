@@ -80,6 +80,16 @@ func ResourceExpiresAt(v time.Time) predicate.RedemptionUse {
 	return predicate.RedemptionUse(sql.FieldEQ(FieldResourceExpiresAt, v))
 }
 
+// BalanceBefore applies equality check predicate on the "balance_before" field. It's identical to BalanceBeforeEQ.
+func BalanceBefore(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldEQ(FieldBalanceBefore, v))
+}
+
+// BalanceAfter applies equality check predicate on the "balance_after" field. It's identical to BalanceAfterEQ.
+func BalanceAfter(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldEQ(FieldBalanceAfter, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.RedemptionUse {
 	return predicate.RedemptionUse(sql.FieldEQ(FieldCreatedAt, v))
@@ -283,6 +293,106 @@ func ResourceExpiresAtIsNil() predicate.RedemptionUse {
 // ResourceExpiresAtNotNil applies the NotNil predicate on the "resource_expires_at" field.
 func ResourceExpiresAtNotNil() predicate.RedemptionUse {
 	return predicate.RedemptionUse(sql.FieldNotNull(FieldResourceExpiresAt))
+}
+
+// BalanceBeforeEQ applies the EQ predicate on the "balance_before" field.
+func BalanceBeforeEQ(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldEQ(FieldBalanceBefore, v))
+}
+
+// BalanceBeforeNEQ applies the NEQ predicate on the "balance_before" field.
+func BalanceBeforeNEQ(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldNEQ(FieldBalanceBefore, v))
+}
+
+// BalanceBeforeIn applies the In predicate on the "balance_before" field.
+func BalanceBeforeIn(vs ...int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldIn(FieldBalanceBefore, vs...))
+}
+
+// BalanceBeforeNotIn applies the NotIn predicate on the "balance_before" field.
+func BalanceBeforeNotIn(vs ...int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldNotIn(FieldBalanceBefore, vs...))
+}
+
+// BalanceBeforeGT applies the GT predicate on the "balance_before" field.
+func BalanceBeforeGT(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldGT(FieldBalanceBefore, v))
+}
+
+// BalanceBeforeGTE applies the GTE predicate on the "balance_before" field.
+func BalanceBeforeGTE(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldGTE(FieldBalanceBefore, v))
+}
+
+// BalanceBeforeLT applies the LT predicate on the "balance_before" field.
+func BalanceBeforeLT(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldLT(FieldBalanceBefore, v))
+}
+
+// BalanceBeforeLTE applies the LTE predicate on the "balance_before" field.
+func BalanceBeforeLTE(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldLTE(FieldBalanceBefore, v))
+}
+
+// BalanceBeforeIsNil applies the IsNil predicate on the "balance_before" field.
+func BalanceBeforeIsNil() predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldIsNull(FieldBalanceBefore))
+}
+
+// BalanceBeforeNotNil applies the NotNil predicate on the "balance_before" field.
+func BalanceBeforeNotNil() predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldNotNull(FieldBalanceBefore))
+}
+
+// BalanceAfterEQ applies the EQ predicate on the "balance_after" field.
+func BalanceAfterEQ(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldEQ(FieldBalanceAfter, v))
+}
+
+// BalanceAfterNEQ applies the NEQ predicate on the "balance_after" field.
+func BalanceAfterNEQ(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldNEQ(FieldBalanceAfter, v))
+}
+
+// BalanceAfterIn applies the In predicate on the "balance_after" field.
+func BalanceAfterIn(vs ...int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldIn(FieldBalanceAfter, vs...))
+}
+
+// BalanceAfterNotIn applies the NotIn predicate on the "balance_after" field.
+func BalanceAfterNotIn(vs ...int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldNotIn(FieldBalanceAfter, vs...))
+}
+
+// BalanceAfterGT applies the GT predicate on the "balance_after" field.
+func BalanceAfterGT(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldGT(FieldBalanceAfter, v))
+}
+
+// BalanceAfterGTE applies the GTE predicate on the "balance_after" field.
+func BalanceAfterGTE(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldGTE(FieldBalanceAfter, v))
+}
+
+// BalanceAfterLT applies the LT predicate on the "balance_after" field.
+func BalanceAfterLT(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldLT(FieldBalanceAfter, v))
+}
+
+// BalanceAfterLTE applies the LTE predicate on the "balance_after" field.
+func BalanceAfterLTE(v int64) predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldLTE(FieldBalanceAfter, v))
+}
+
+// BalanceAfterIsNil applies the IsNil predicate on the "balance_after" field.
+func BalanceAfterIsNil() predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldIsNull(FieldBalanceAfter))
+}
+
+// BalanceAfterNotNil applies the NotNil predicate on the "balance_after" field.
+func BalanceAfterNotNil() predicate.RedemptionUse {
+	return predicate.RedemptionUse(sql.FieldNotNull(FieldBalanceAfter))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

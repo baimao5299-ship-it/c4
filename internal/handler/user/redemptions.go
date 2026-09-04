@@ -70,7 +70,7 @@ func (h *UserAPI) GetUserRedemptions(w http.ResponseWriter, r *http.Request, par
 	}
 	out := make([]RedemptionRecord, 0, len(rows))
 	for _, rec := range rows {
-		out = append(out, RedemptionRecord{
+		row := RedemptionRecord{
 			ID:                rec.ID,
 			CodeID:            rec.CodeID,
 			Code:              rec.Code,
@@ -80,7 +80,16 @@ func (h *UserAPI) GetUserRedemptions(w http.ResponseWriter, r *http.Request, par
 			ResourceExpiresAt: rec.ResourceExpiresAt,
 			GroupID:           rec.GroupID,
 			CreatedAt:         rec.CreatedAt,
-		})
+		}
+		if rec.BalanceBefore != nil {
+			v := millisToUSD(*rec.BalanceBefore)
+			row.BalanceBefore = &v
+		}
+		if rec.BalanceAfter != nil {
+			v := millisToUSD(*rec.BalanceAfter)
+			row.BalanceAfter = &v
+		}
+		out = append(out, row)
 	}
 	httpface.WriteJSON(w, http.StatusOK, RedemptionRecordListResponse{Total: total, Rows: out})
 }

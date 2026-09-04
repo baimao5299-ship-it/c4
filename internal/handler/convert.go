@@ -426,7 +426,7 @@ func normalToMultI64Ptr(v *float64) *int64 {
 func toAPIUser(u *domain.User) User {
 	r := UserRole(u.Role)
 	st := UserStatus(u.Status)
-	return User{
+	out := User{
 		ID:             &u.ID,
 		Email:          &u.Email,
 		Role:           &r,
@@ -436,6 +436,14 @@ func toAPIUser(u *domain.User) User {
 		CreatedAt:      &u.CreatedAt,
 		UpdatedAt:      &u.UpdatedAt,
 	}
+	if u.InviteCode != "" {
+		out.InviteCode = &u.InviteCode
+	}
+	out.InviterID = u.InviterID
+	if u.InviterEmail != "" {
+		out.InviterEmail = &u.InviterEmail
+	}
+	return out
 }
 
 // toAPIUsageLog 用量日志领域对象 → 契约类型（err_logs 分表后 usage_logs 无

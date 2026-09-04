@@ -28,6 +28,10 @@ type RedemptionUse struct {
 	GroupID *int64 `json:"group_id,omitempty"`
 	// ResourceExpiresAt holds the value of the "resource_expires_at" field.
 	ResourceExpiresAt *time.Time `json:"resource_expires_at,omitempty"`
+	// BalanceBefore holds the value of the "balance_before" field.
+	BalanceBefore *int64 `json:"balance_before,omitempty"`
+	// BalanceAfter holds the value of the "balance_after" field.
+	BalanceAfter *int64 `json:"balance_after,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -61,7 +65,7 @@ func (*RedemptionUse) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case redemptionuse.FieldID, redemptionuse.FieldCodeID, redemptionuse.FieldUserID, redemptionuse.FieldValue, redemptionuse.FieldGroupID:
+		case redemptionuse.FieldID, redemptionuse.FieldCodeID, redemptionuse.FieldUserID, redemptionuse.FieldValue, redemptionuse.FieldGroupID, redemptionuse.FieldBalanceBefore, redemptionuse.FieldBalanceAfter:
 			values[i] = new(sql.NullInt64)
 		case redemptionuse.FieldResourceExpiresAt, redemptionuse.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -117,6 +121,20 @@ func (_m *RedemptionUse) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ResourceExpiresAt = new(time.Time)
 				*_m.ResourceExpiresAt = value.Time
+			}
+		case redemptionuse.FieldBalanceBefore:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field balance_before", values[i])
+			} else if value.Valid {
+				_m.BalanceBefore = new(int64)
+				*_m.BalanceBefore = value.Int64
+			}
+		case redemptionuse.FieldBalanceAfter:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field balance_after", values[i])
+			} else if value.Valid {
+				_m.BalanceAfter = new(int64)
+				*_m.BalanceAfter = value.Int64
 			}
 		case redemptionuse.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -182,6 +200,16 @@ func (_m *RedemptionUse) String() string {
 	if v := _m.ResourceExpiresAt; v != nil {
 		builder.WriteString("resource_expires_at=")
 		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.BalanceBefore; v != nil {
+		builder.WriteString("balance_before=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.BalanceAfter; v != nil {
+		builder.WriteString("balance_after=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")

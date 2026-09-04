@@ -8,7 +8,7 @@
 #   #   docker compose up -d --build
 #
 # GHCR 快速上手（预构建镜像，release 流水线发布）：
-#   docker pull ghcr.io/baimao5299-ship-it/c4:v0.0.1-beta.29
+#   docker pull ghcr.io/baimao5299-ship-it/c4:v0.0.1-beta.30
 # 生产默认使用固定版本；需要跟随最新 beta 时显式设置完整的 IMAGE=...:beta。
 
 services:
@@ -69,7 +69,7 @@ services:
     # published default makes both `up --build` and pull-only deployments work.
     # C4 is the primary image name. Set IMAGE explicitly to keep using an
     # existing private mirror or the legacy c3api compatibility package.
-    image: ${IMAGE:-ghcr.io/baimao5299-ship-it/c4:v0.0.1-beta.29}
+    image: ${IMAGE:-ghcr.io/baimao5299-ship-it/c4:v0.0.1-beta.30}
     build:
       context: .
       args:

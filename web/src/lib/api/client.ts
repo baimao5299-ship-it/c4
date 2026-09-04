@@ -140,6 +140,77 @@ export interface UserChannelMonitorParams {
   to?: string
 }
 
+export interface ReferralReward {
+  id: number
+  invitee_email?: string
+  invitee_id?: number
+  source_type: string
+  base_amount: number
+  rate?: number
+  reward_amount: number
+  status: 'pending' | 'credited' | 'reversed' | 'frozen' | 'claimable' | 'claimed' | string
+  available_at: string
+  credited_at?: string | null
+  claimed_at?: string | null
+  created_at: string
+}
+
+export interface ReferralSummary {
+  invite_code: string
+  invite_link: string
+  invited_count: number
+  frozen_amount: number
+  claimable_amount: number
+  claimed_amount: number
+  rewards: ReferralReward[]
+}
+
+interface ReferralSummaryResponse {
+  invite_code: string
+  invite_link?: string
+  invited_count?: number
+  invite_count?: number
+  frozen_amount?: number
+  pending_amount?: number
+  claimable_amount?: number
+  available_amount?: number
+  claimed_amount?: number
+  credited_amount?: number
+  rewards?: ReferralReward[]
+}
+
+interface ReferralRewardsResponse {
+  rows: ReferralReward[]
+  total: number
+}
+
+function referralLink(inviteCode: string, supplied?: string): string {
+  if (supplied) return supplied
+  const origin = globalThis.location?.origin ?? ''
+  return `${origin}/user/register?ref=${encodeURIComponent(inviteCode)}`
+}
+
+function normalizeReferralSummary(summary: ReferralSummaryResponse, rewards: ReferralReward[]): ReferralSummary {
+  return {
+    invite_code: summary.invite_code,
+    invite_link: referralLink(summary.invite_code, summary.invite_link),
+    invited_count: summary.invited_count ?? summary.invite_count ?? 0,
+    frozen_amount: summary.frozen_amount ?? summary.pending_amount ?? 0,
+    claimable_amount: summary.claimable_amount ?? summary.available_amount ?? 0,
+    claimed_amount: summary.claimed_amount ?? summary.credited_amount ?? 0,
+    rewards,
+  }
+}
+
+function referralRequestID(): string {
+  const uuid = globalThis.crypto?.randomUUID?.()
+  if (uuid) return uuid
+  return `claim-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+export type UserRegisterInput = components['schemas']['UserAuthRegister'] & { referral_code?: string }
+export type UserBalanceAdjustment = { amount: number; note: string; idempotency_key?: string }
+
 // 过滤 undefined/null/空串，返回 '' 或 '?k=v&...' 查询串。
 export function toQuery(p?: object): string {
   if (!p) return ''
@@ -276,6 +347,7 @@ export class ApiClient {
   listUsers = (p?: { limit?: number; offset?: number; email?: string; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['UserListResponse']>('/users', { params: toQuery(p) })
   createUser = (b: components['schemas']['UserCreate']) => this.request<components['schemas']['User']>('/users', { method: 'POST', body: JSON.stringify(b) })
   updateUser = (id: number, b: components['schemas']['UserUpdate']) => this.request<components['schemas']['User']>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(b) })
+  addUserBalance = (id: number, b: UserBalanceAdjustment) => this.request<components['schemas']['User']>(`/users/${id}/balance`, { method: 'POST', body: JSON.stringify(b) })
   setGroupAssignments = (id: number, b: components['schemas']['GroupAssignmentsBody']) => this.request<components['schemas']['GroupAssignmentsResponse']>(`/groups/${id}/assignments`, { method: 'PUT', body: JSON.stringify(b) })
   getGroupAssignments = (id: number) => this.request<components['schemas']['GroupAssignmentsResponse']>(`/groups/${id}/assignments`)
   getUserGroups = (id: number) => this.request<components['schemas']['UserGroupsResponse']>(`/users/${id}/groups`)
@@ -315,7 +387,7 @@ export class ApiClient {
   getAdminTempBalances = (p?: { page?: number; page_size?: number; user_id?: number; sort?: string; order?: 'asc' | 'desc' }) =>
     this.request<components['schemas']['AdminTempBalancesResponse']>('/temp-balances', { params: toQuery(p) })
   // —— 用户端（userApi 专属；token 用 userAuth）——
-  register = (b: components['schemas']['UserAuthRegister']) => this.request<components['schemas']['UserAuthResponse']>('/auth/register', { method: 'POST', body: JSON.stringify(b) })
+  register = (b: UserRegisterInput) => this.request<components['schemas']['UserAuthResponse']>('/auth/register', { method: 'POST', body: JSON.stringify(b) })
   login = (b: components['schemas']['UserAuthLogin']) => this.request<components['schemas']['UserAuthResponse']>('/auth/login', { method: 'POST', body: JSON.stringify(b) })
   me = () => this.request<components['schemas']['User']>('/auth/me')
   listUserGroups = () => this.request<components['schemas']['Group'][]>('/groups')
@@ -333,6 +405,16 @@ export class ApiClient {
   redeem = (code: string) => this.request<components['schemas']['RedeemResponse']>('/redemptions', { method: 'POST', body: JSON.stringify({ code }) })
   listUserRedemptions = (p?: { page?: number; page_size?: number; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['RedemptionRecordListResponse']>('/redemptions', { params: toQuery(p) })
   getTempBalances = () => this.request<components['schemas']['TempBalancesResponse']>('/temp-balances')
+  getReferrals = async (): Promise<ReferralSummary> => {
+    const summary = await this.request<ReferralSummaryResponse>('/referrals')
+    if (Array.isArray(summary.rewards)) return normalizeReferralSummary(summary, summary.rewards)
+    const rewards = await this.request<ReferralRewardsResponse>('/referrals/rewards', { params: toQuery({ page: 1, page_size: 100 }) })
+    return normalizeReferralSummary(summary, rewards.rows)
+  }
+  claimReferralRewards = async (): Promise<ReferralSummary> => {
+    await this.request('/referrals/claim', { method: 'POST', body: JSON.stringify({ request_id: referralRequestID() }) })
+    return this.getReferrals()
+  }
   changePassword = (b: components['schemas']['UserAuthChangePassword']) => this.request<components['schemas']['ChangePasswordResponse']>('/auth/change-password', { method: 'POST', body: JSON.stringify(b) })
   registerCode = (b: components['schemas']['RegisterCodeRequest']) => this.request<components['schemas']['SentResponse']>('/auth/register-code', { method: 'POST', body: JSON.stringify(b) })
   forgotPassword = (b: components['schemas']['ForgotPasswordRequest']) => this.request<components['schemas']['SentResponse']>('/auth/forgot-password', { method: 'POST', body: JSON.stringify(b) })

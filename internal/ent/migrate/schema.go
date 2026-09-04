@@ -86,6 +86,33 @@ var (
 			},
 		},
 	}
+	// BalanceLedgersColumns holds the columns for the "balance_ledgers" table.
+	BalanceLedgersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "kind", Type: field.TypeEnum, Enums: []string{"redemption", "admin_credit", "referral_claim"}},
+		{Name: "source_id", Type: field.TypeString},
+		{Name: "note", Type: field.TypeString, Nullable: true},
+		{Name: "idempotency_key", Type: field.TypeString, Unique: true},
+		{Name: "delta", Type: field.TypeInt64},
+		{Name: "balance_before", Type: field.TypeInt64},
+		{Name: "balance_after", Type: field.TypeInt64},
+		{Name: "actor_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// BalanceLedgersTable holds the schema information for the "balance_ledgers" table.
+	BalanceLedgersTable = &schema.Table{
+		Name:       "balance_ledgers",
+		Columns:    BalanceLedgersColumns,
+		PrimaryKey: []*schema.Column{BalanceLedgersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "balanceledger_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{BalanceLedgersColumns[1], BalanceLedgersColumns[10]},
+			},
+		},
+	}
 	// EmailTemplatesColumns holds the columns for the "email_templates" table.
 	EmailTemplatesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -402,6 +429,8 @@ var (
 		{Name: "value", Type: field.TypeInt64},
 		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "resource_expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "balance_before", Type: field.TypeInt64, Nullable: true},
+		{Name: "balance_after", Type: field.TypeInt64, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "code_id", Type: field.TypeInt64},
 	}
@@ -413,7 +442,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "redemption_uses_redemption_codes_uses",
-				Columns:    []*schema.Column{RedemptionUsesColumns[6]},
+				Columns:    []*schema.Column{RedemptionUsesColumns[8]},
 				RefColumns: []*schema.Column{RedemptionCodesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -422,12 +451,66 @@ var (
 			{
 				Name:    "redemptionuse_code_id_user_id",
 				Unique:  true,
-				Columns: []*schema.Column{RedemptionUsesColumns[6], RedemptionUsesColumns[1]},
+				Columns: []*schema.Column{RedemptionUsesColumns[8], RedemptionUsesColumns[1]},
 			},
 			{
 				Name:    "redemptionuse_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{RedemptionUsesColumns[1]},
+			},
+		},
+	}
+	// ReferralsColumns holds the columns for the "referrals" table.
+	ReferralsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "inviter_id", Type: field.TypeInt64},
+		{Name: "invitee_id", Type: field.TypeInt64, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// ReferralsTable holds the schema information for the "referrals" table.
+	ReferralsTable = &schema.Table{
+		Name:       "referrals",
+		Columns:    ReferralsColumns,
+		PrimaryKey: []*schema.Column{ReferralsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "referral_inviter_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ReferralsColumns[1], ReferralsColumns[3]},
+			},
+		},
+	}
+	// ReferralRewardsColumns holds the columns for the "referral_rewards" table.
+	ReferralRewardsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "inviter_id", Type: field.TypeInt64},
+		{Name: "invitee_id", Type: field.TypeInt64},
+		{Name: "source_type", Type: field.TypeEnum, Enums: []string{"redemption", "admin_credit"}},
+		{Name: "source_id", Type: field.TypeString},
+		{Name: "idempotency_key", Type: field.TypeString, Unique: true},
+		{Name: "base_amount", Type: field.TypeInt64},
+		{Name: "rate_bps", Type: field.TypeInt, Default: 500},
+		{Name: "reward_amount", Type: field.TypeInt64},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"pending", "credited", "reversed"}, Default: "pending"},
+		{Name: "available_at", Type: field.TypeTime},
+		{Name: "credited_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// ReferralRewardsTable holds the schema information for the "referral_rewards" table.
+	ReferralRewardsTable = &schema.Table{
+		Name:       "referral_rewards",
+		Columns:    ReferralRewardsColumns,
+		PrimaryKey: []*schema.Column{ReferralRewardsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "referralreward_inviter_id_status_available_at",
+				Unique:  false,
+				Columns: []*schema.Column{ReferralRewardsColumns[1], ReferralRewardsColumns[9], ReferralRewardsColumns[10]},
+			},
+			{
+				Name:    "referralreward_invitee_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ReferralRewardsColumns[2], ReferralRewardsColumns[12]},
 			},
 		},
 	}
@@ -755,6 +838,7 @@ var (
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "disabled"}, Default: "active"},
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 0},
 		{Name: "balance", Type: field.TypeInt64, Default: 0},
+		{Name: "invite_code", Type: field.TypeString, Unique: true, Nullable: true},
 		{Name: "token_version", Type: field.TypeInt64, Default: 0},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
@@ -794,6 +878,7 @@ var (
 	Tables = []*schema.Table{
 		AccountsTable,
 		AccountExtsTable,
+		BalanceLedgersTable,
 		EmailTemplatesTable,
 		ErrLogsTable,
 		GroupsTable,
@@ -804,6 +889,8 @@ var (
 		PriceVariantsTable,
 		RedemptionCodesTable,
 		RedemptionUsesTable,
+		ReferralsTable,
+		ReferralRewardsTable,
 		RulesTable,
 		SettingsTable,
 		TempBalancesTable,

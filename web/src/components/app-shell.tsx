@@ -4,7 +4,7 @@
 
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Boxes, Server, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu, Menu, Activity, BookOpen } from 'lucide-react'
+import { LayoutDashboard, Boxes, Server, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu, Menu, Activity, BookOpen, Gift } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
@@ -37,6 +37,7 @@ const userNav = [
   { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
   { to: '/user/stats', key: 'user.nav.stats', icon: BarChart3, end: false },
   { to: '/user/redemptions', key: 'user.nav.redemptions', icon: Ticket, end: false },
+  { to: '/user/referrals', key: 'user.nav.referrals', icon: Gift, end: false },
 ]
 
 // 手机底栏只保留用户完成一次调用所需的五个入口；统计仍可从顶部菜单进入。

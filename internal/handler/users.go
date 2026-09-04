@@ -6,6 +6,8 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/handler/httpface"
@@ -99,14 +101,32 @@ func (h *AdminAPI) PutUsersId(w http.ResponseWriter, r *http.Request, id int64) 
 		patch.MaxConcurrency = in.MaxConcurrency
 		patch.OldMaxConcurrency = &u.MaxConcurrency // 旧值条件：GET 快照
 	}
+	hasNonBalance := in.Role != nil || in.Status != nil || in.MaxConcurrency != nil
 	if in.Balance != nil {
 		bal, err := usdToMillisChecked(*in.Balance)
-		if err != nil {
+		if err != nil || bal < 0 {
+			if err == nil {
+				httpface.WriteErr(w, http.StatusBadRequest, "balance must be non-negative")
+				return
+			}
 			httpface.WriteErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		patch.Balance = &bal
-		patch.OldBalance = &u.Balance // 旧值条件：GET 快照
+		if bal != u.Balance {
+			if _, err := h.svc.SetUserBalanceWithNote(r.Context(), id, bal, createdBy(r), "admin-absolute:"+strconv.FormatInt(id, 10)+":"+strconv.FormatInt(time.Now().UnixNano(), 10), "absolute balance adjustment"); err != nil {
+				httpface.WriteServiceErr(w, err)
+				return
+			}
+		}
+	}
+	if !hasNonBalance {
+		updated, err := h.svc.GetUser(r.Context(), id)
+		if err != nil {
+			httpface.WriteServiceErr(w, err)
+			return
+		}
+		httpface.WriteJSON(w, http.StatusOK, toAPIUser(updated))
+		return
 	}
 	updated, err := h.svc.UpdateUser(r.Context(), patch)
 	if err != nil {

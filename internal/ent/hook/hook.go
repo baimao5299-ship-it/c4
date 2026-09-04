@@ -33,6 +33,18 @@ func (f AccountExtFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountExtMutation", m)
 }
 
+// The BalanceLedgerFunc type is an adapter to allow the use of ordinary
+// function as BalanceLedger mutator.
+type BalanceLedgerFunc func(context.Context, *ent.BalanceLedgerMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BalanceLedgerFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BalanceLedgerMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BalanceLedgerMutation", m)
+}
+
 // The EmailTemplateFunc type is an adapter to allow the use of ordinary
 // function as EmailTemplate mutator.
 type EmailTemplateFunc func(context.Context, *ent.EmailTemplateMutation) (ent.Value, error)
@@ -151,6 +163,30 @@ func (f RedemptionUseFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Valu
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RedemptionUseMutation", m)
+}
+
+// The ReferralFunc type is an adapter to allow the use of ordinary
+// function as Referral mutator.
+type ReferralFunc func(context.Context, *ent.ReferralMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ReferralFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ReferralMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ReferralMutation", m)
+}
+
+// The ReferralRewardFunc type is an adapter to allow the use of ordinary
+// function as ReferralReward mutator.
+type ReferralRewardFunc func(context.Context, *ent.ReferralRewardMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ReferralRewardFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ReferralRewardMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ReferralRewardMutation", m)
 }
 
 // The RuleFunc type is an adapter to allow the use of ordinary

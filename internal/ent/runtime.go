@@ -7,6 +7,7 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/balanceledger"
 	"github.com/is7qin/c3api/internal/ent/emailtemplate"
 	"github.com/is7qin/c3api/internal/ent/errlog"
 	"github.com/is7qin/c3api/internal/ent/group"
@@ -17,6 +18,8 @@ import (
 	"github.com/is7qin/c3api/internal/ent/pricevariant"
 	"github.com/is7qin/c3api/internal/ent/redemptioncode"
 	"github.com/is7qin/c3api/internal/ent/redemptionuse"
+	"github.com/is7qin/c3api/internal/ent/referral"
+	"github.com/is7qin/c3api/internal/ent/referralreward"
 	"github.com/is7qin/c3api/internal/ent/rule"
 	"github.com/is7qin/c3api/internal/ent/schema"
 	"github.com/is7qin/c3api/internal/ent/setting"
@@ -53,6 +56,12 @@ func init() {
 	accountDescCreatedAt := accountFields[15].Descriptor()
 	// account.DefaultCreatedAt holds the default value on creation for the created_at field.
 	account.DefaultCreatedAt = accountDescCreatedAt.Default.(func() time.Time)
+	balanceledgerFields := schema.BalanceLedger{}.Fields()
+	_ = balanceledgerFields
+	// balanceledgerDescCreatedAt is the schema descriptor for created_at field.
+	balanceledgerDescCreatedAt := balanceledgerFields[10].Descriptor()
+	// balanceledger.DefaultCreatedAt holds the default value on creation for the created_at field.
+	balanceledger.DefaultCreatedAt = balanceledgerDescCreatedAt.Default.(func() time.Time)
 	emailtemplateFields := schema.EmailTemplate{}.Fields()
 	_ = emailtemplateFields
 	// emailtemplateDescUpdatedAt is the schema descriptor for updated_at field.
@@ -228,9 +237,25 @@ func init() {
 	redemptionuseFields := schema.RedemptionUse{}.Fields()
 	_ = redemptionuseFields
 	// redemptionuseDescCreatedAt is the schema descriptor for created_at field.
-	redemptionuseDescCreatedAt := redemptionuseFields[6].Descriptor()
+	redemptionuseDescCreatedAt := redemptionuseFields[8].Descriptor()
 	// redemptionuse.DefaultCreatedAt holds the default value on creation for the created_at field.
 	redemptionuse.DefaultCreatedAt = redemptionuseDescCreatedAt.Default.(func() time.Time)
+	referralFields := schema.Referral{}.Fields()
+	_ = referralFields
+	// referralDescCreatedAt is the schema descriptor for created_at field.
+	referralDescCreatedAt := referralFields[3].Descriptor()
+	// referral.DefaultCreatedAt holds the default value on creation for the created_at field.
+	referral.DefaultCreatedAt = referralDescCreatedAt.Default.(func() time.Time)
+	referralrewardFields := schema.ReferralReward{}.Fields()
+	_ = referralrewardFields
+	// referralrewardDescRateBps is the schema descriptor for rate_bps field.
+	referralrewardDescRateBps := referralrewardFields[7].Descriptor()
+	// referralreward.DefaultRateBps holds the default value on creation for the rate_bps field.
+	referralreward.DefaultRateBps = referralrewardDescRateBps.Default.(int)
+	// referralrewardDescCreatedAt is the schema descriptor for created_at field.
+	referralrewardDescCreatedAt := referralrewardFields[12].Descriptor()
+	// referralreward.DefaultCreatedAt holds the default value on creation for the created_at field.
+	referralreward.DefaultCreatedAt = referralrewardDescCreatedAt.Default.(func() time.Time)
 	ruleFields := schema.Rule{}.Fields()
 	_ = ruleFields
 	// ruleDescEnabled is the schema descriptor for enabled field.
@@ -554,15 +579,15 @@ func init() {
 	// user.DefaultBalance holds the default value on creation for the balance field.
 	user.DefaultBalance = userDescBalance.Default.(int64)
 	// userDescTokenVersion is the schema descriptor for token_version field.
-	userDescTokenVersion := userFields[7].Descriptor()
+	userDescTokenVersion := userFields[8].Descriptor()
 	// user.DefaultTokenVersion holds the default value on creation for the token_version field.
 	user.DefaultTokenVersion = userDescTokenVersion.Default.(int64)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[8].Descriptor()
+	userDescCreatedAt := userFields[9].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[9].Descriptor()
+	userDescUpdatedAt := userFields[10].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

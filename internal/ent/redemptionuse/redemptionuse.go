@@ -24,6 +24,10 @@ const (
 	FieldGroupID = "group_id"
 	// FieldResourceExpiresAt holds the string denoting the resource_expires_at field in the database.
 	FieldResourceExpiresAt = "resource_expires_at"
+	// FieldBalanceBefore holds the string denoting the balance_before field in the database.
+	FieldBalanceBefore = "balance_before"
+	// FieldBalanceAfter holds the string denoting the balance_after field in the database.
+	FieldBalanceAfter = "balance_after"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// EdgeCode holds the string denoting the code edge name in mutations.
@@ -47,6 +51,8 @@ var Columns = []string{
 	FieldValue,
 	FieldGroupID,
 	FieldResourceExpiresAt,
+	FieldBalanceBefore,
+	FieldBalanceAfter,
 	FieldCreatedAt,
 }
 
@@ -96,6 +102,16 @@ func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 // ByResourceExpiresAt orders the results by the resource_expires_at field.
 func ByResourceExpiresAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldResourceExpiresAt, opts...).ToFunc()
+}
+
+// ByBalanceBefore orders the results by the balance_before field.
+func ByBalanceBefore(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBalanceBefore, opts...).ToFunc()
+}
+
+// ByBalanceAfter orders the results by the balance_after field.
+func ByBalanceAfter(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBalanceAfter, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

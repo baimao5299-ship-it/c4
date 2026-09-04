@@ -21,6 +21,8 @@ func (RedemptionUse) Fields() []ent.Field {
 		field.Int64("value"),                                    // 兑换时的值快照（最小单位）
 		field.Int64("group_id").Optional().Nillable(),           // scoped code group snapshot; NULL = global/legacy
 		field.Time("resource_expires_at").Optional().Nillable(), // 资源到期快照
+		field.Int64("balance_before").Optional().Nillable(),
+		field.Int64("balance_after").Optional().Nillable(),
 		field.Time("created_at").Default(time.Now),
 	}
 }

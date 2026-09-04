@@ -2,7 +2,7 @@
 // Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { UserPlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -25,6 +25,8 @@ export default function UserRegister() {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [code, setCode] = useState('')
+  const [searchParams] = useSearchParams()
+  const [referralCode, setReferralCode] = useState(() => searchParams.get('ref')?.trim() ?? '')
   const [step, setStep] = useState<'form' | 'code'>('form')
   const [countdown, setCountdown] = useState(0)
   const [err, setErr] = useState('')
@@ -32,7 +34,7 @@ export default function UserRegister() {
   const nav = useNavigate()
   useEffect(() => { if (countdown <= 0) return; const id = setTimeout(() => setCountdown(c => c - 1), 1000); return () => clearTimeout(id) }, [countdown])
   const doRegister = async (withCode: string | undefined) => {
-    const res = await userApi.register({ email: email.trim(), password, ...(withCode ? { code: withCode } : {}) })
+    const res = await userApi.register({ email: email.trim(), password, ...(withCode ? { code: withCode } : {}), ...(referralCode.trim() ? { referral_code: referralCode.trim() } : {}) })
     userAuth.setToken(res.token)
     userAuth.setRole(res.user.Role)
     userAuth.setMode('user')
@@ -68,6 +70,11 @@ export default function UserRegister() {
               <div className="space-y-1.5"><Label htmlFor="register-email">{t('user.auth.email')}</Label><Input id="register-email" type="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" placeholder={t('user.auth.email')} value={email} onChange={e => { setEmail(e.target.value); setErr('') }} disabled={step==='code'} aria-invalid={Boolean(err)} aria-describedby={err ? 'register-error' : undefined} /></div>
               <div className="space-y-1.5"><Label htmlFor="register-password">{t('user.auth.password')}</Label><Input id="register-password" type="password" autoComplete="new-password" placeholder={t('user.auth.password')} value={password} onChange={e => { setPassword(e.target.value); setErr('') }} disabled={step==='code'} aria-invalid={Boolean(err)} aria-describedby={err ? 'register-error' : undefined} /></div>
               <div className="space-y-1.5"><Label htmlFor="register-confirm">{t('user.auth.confirmPassword')}</Label><Input id="register-confirm" type="password" autoComplete="new-password" placeholder={t('user.auth.confirmPassword')} value={confirm} onChange={e => { setConfirm(e.target.value); setErr('') }} disabled={step==='code'} aria-invalid={Boolean(err)} aria-describedby={err ? 'register-error' : undefined} /></div>
+              <div className="space-y-1.5">
+                <Label htmlFor="register-referral">{t('user.register.referralLabel')}</Label>
+                <Input id="register-referral" autoCapitalize="characters" autoCorrect="off" value={referralCode} placeholder={t('user.register.referralPlaceholder')} onChange={e => { setReferralCode(e.target.value); setErr('') }} disabled={step === 'code'} />
+                <p className="text-xs text-muted-foreground">{t('user.register.referralHint')}</p>
+              </div>
               {step==='code' && <div className="space-y-1.5"><Label htmlFor="register-code">{t('user.register.codePlaceholder')}</Label><div className="flex gap-2"><Input id="register-code" inputMode="numeric" autoComplete="one-time-code" placeholder={t('user.register.codePlaceholder')} value={code} onChange={e => { setCode(e.target.value); setErr('') }} aria-invalid={Boolean(err)} aria-describedby={err ? 'register-error' : undefined} /><Button type="button" variant="outline" disabled={countdown>0 || loading} onClick={() => { void resend() }}>{countdown>0 ? `${countdown}s` : t('user.register.resend')}</Button></div></div>}
               {err && <p id="register-error" role="alert" className="text-sm text-destructive">{err}</p>}
               <Button type="submit" className="w-full" disabled={loading}>{step==='code' ? t('user.register.verifyButton') : t('user.auth.registerButton')}</Button>

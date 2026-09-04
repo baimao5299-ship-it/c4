@@ -132,6 +132,60 @@ func (_u *RedemptionUseUpdate) ClearResourceExpiresAt() *RedemptionUseUpdate {
 	return _u
 }
 
+// SetBalanceBefore sets the "balance_before" field.
+func (_u *RedemptionUseUpdate) SetBalanceBefore(v int64) *RedemptionUseUpdate {
+	_u.mutation.ResetBalanceBefore()
+	_u.mutation.SetBalanceBefore(v)
+	return _u
+}
+
+// SetNillableBalanceBefore sets the "balance_before" field if the given value is not nil.
+func (_u *RedemptionUseUpdate) SetNillableBalanceBefore(v *int64) *RedemptionUseUpdate {
+	if v != nil {
+		_u.SetBalanceBefore(*v)
+	}
+	return _u
+}
+
+// AddBalanceBefore adds value to the "balance_before" field.
+func (_u *RedemptionUseUpdate) AddBalanceBefore(v int64) *RedemptionUseUpdate {
+	_u.mutation.AddBalanceBefore(v)
+	return _u
+}
+
+// ClearBalanceBefore clears the value of the "balance_before" field.
+func (_u *RedemptionUseUpdate) ClearBalanceBefore() *RedemptionUseUpdate {
+	_u.mutation.ClearBalanceBefore()
+	return _u
+}
+
+// SetBalanceAfter sets the "balance_after" field.
+func (_u *RedemptionUseUpdate) SetBalanceAfter(v int64) *RedemptionUseUpdate {
+	_u.mutation.ResetBalanceAfter()
+	_u.mutation.SetBalanceAfter(v)
+	return _u
+}
+
+// SetNillableBalanceAfter sets the "balance_after" field if the given value is not nil.
+func (_u *RedemptionUseUpdate) SetNillableBalanceAfter(v *int64) *RedemptionUseUpdate {
+	if v != nil {
+		_u.SetBalanceAfter(*v)
+	}
+	return _u
+}
+
+// AddBalanceAfter adds value to the "balance_after" field.
+func (_u *RedemptionUseUpdate) AddBalanceAfter(v int64) *RedemptionUseUpdate {
+	_u.mutation.AddBalanceAfter(v)
+	return _u
+}
+
+// ClearBalanceAfter clears the value of the "balance_after" field.
+func (_u *RedemptionUseUpdate) ClearBalanceAfter() *RedemptionUseUpdate {
+	_u.mutation.ClearBalanceAfter()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *RedemptionUseUpdate) SetCreatedAt(v time.Time) *RedemptionUseUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -235,6 +289,24 @@ func (_u *RedemptionUseUpdate) sqlSave(ctx context.Context) (_node int, err erro
 	}
 	if _u.mutation.ResourceExpiresAtCleared() {
 		_spec.ClearField(redemptionuse.FieldResourceExpiresAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.BalanceBefore(); ok {
+		_spec.SetField(redemptionuse.FieldBalanceBefore, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedBalanceBefore(); ok {
+		_spec.AddField(redemptionuse.FieldBalanceBefore, field.TypeInt64, value)
+	}
+	if _u.mutation.BalanceBeforeCleared() {
+		_spec.ClearField(redemptionuse.FieldBalanceBefore, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.BalanceAfter(); ok {
+		_spec.SetField(redemptionuse.FieldBalanceAfter, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedBalanceAfter(); ok {
+		_spec.AddField(redemptionuse.FieldBalanceAfter, field.TypeInt64, value)
+	}
+	if _u.mutation.BalanceAfterCleared() {
+		_spec.ClearField(redemptionuse.FieldBalanceAfter, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(redemptionuse.FieldCreatedAt, field.TypeTime, value)
@@ -391,6 +463,60 @@ func (_u *RedemptionUseUpdateOne) ClearResourceExpiresAt() *RedemptionUseUpdateO
 	return _u
 }
 
+// SetBalanceBefore sets the "balance_before" field.
+func (_u *RedemptionUseUpdateOne) SetBalanceBefore(v int64) *RedemptionUseUpdateOne {
+	_u.mutation.ResetBalanceBefore()
+	_u.mutation.SetBalanceBefore(v)
+	return _u
+}
+
+// SetNillableBalanceBefore sets the "balance_before" field if the given value is not nil.
+func (_u *RedemptionUseUpdateOne) SetNillableBalanceBefore(v *int64) *RedemptionUseUpdateOne {
+	if v != nil {
+		_u.SetBalanceBefore(*v)
+	}
+	return _u
+}
+
+// AddBalanceBefore adds value to the "balance_before" field.
+func (_u *RedemptionUseUpdateOne) AddBalanceBefore(v int64) *RedemptionUseUpdateOne {
+	_u.mutation.AddBalanceBefore(v)
+	return _u
+}
+
+// ClearBalanceBefore clears the value of the "balance_before" field.
+func (_u *RedemptionUseUpdateOne) ClearBalanceBefore() *RedemptionUseUpdateOne {
+	_u.mutation.ClearBalanceBefore()
+	return _u
+}
+
+// SetBalanceAfter sets the "balance_after" field.
+func (_u *RedemptionUseUpdateOne) SetBalanceAfter(v int64) *RedemptionUseUpdateOne {
+	_u.mutation.ResetBalanceAfter()
+	_u.mutation.SetBalanceAfter(v)
+	return _u
+}
+
+// SetNillableBalanceAfter sets the "balance_after" field if the given value is not nil.
+func (_u *RedemptionUseUpdateOne) SetNillableBalanceAfter(v *int64) *RedemptionUseUpdateOne {
+	if v != nil {
+		_u.SetBalanceAfter(*v)
+	}
+	return _u
+}
+
+// AddBalanceAfter adds value to the "balance_after" field.
+func (_u *RedemptionUseUpdateOne) AddBalanceAfter(v int64) *RedemptionUseUpdateOne {
+	_u.mutation.AddBalanceAfter(v)
+	return _u
+}
+
+// ClearBalanceAfter clears the value of the "balance_after" field.
+func (_u *RedemptionUseUpdateOne) ClearBalanceAfter() *RedemptionUseUpdateOne {
+	_u.mutation.ClearBalanceAfter()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *RedemptionUseUpdateOne) SetCreatedAt(v time.Time) *RedemptionUseUpdateOne {
 	_u.mutation.SetCreatedAt(v)
@@ -524,6 +650,24 @@ func (_u *RedemptionUseUpdateOne) sqlSave(ctx context.Context) (_node *Redemptio
 	}
 	if _u.mutation.ResourceExpiresAtCleared() {
 		_spec.ClearField(redemptionuse.FieldResourceExpiresAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.BalanceBefore(); ok {
+		_spec.SetField(redemptionuse.FieldBalanceBefore, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedBalanceBefore(); ok {
+		_spec.AddField(redemptionuse.FieldBalanceBefore, field.TypeInt64, value)
+	}
+	if _u.mutation.BalanceBeforeCleared() {
+		_spec.ClearField(redemptionuse.FieldBalanceBefore, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.BalanceAfter(); ok {
+		_spec.SetField(redemptionuse.FieldBalanceAfter, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedBalanceAfter(); ok {
+		_spec.AddField(redemptionuse.FieldBalanceAfter, field.TypeInt64, value)
+	}
+	if _u.mutation.BalanceAfterCleared() {
+		_spec.ClearField(redemptionuse.FieldBalanceAfter, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(redemptionuse.FieldCreatedAt, field.TypeTime, value)

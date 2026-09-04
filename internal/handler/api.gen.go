@@ -807,6 +807,18 @@ type AdminTempBalancesResponse struct {
 	Total int64                 `json:"total"`
 }
 
+// BalanceAdjustmentRequest defines model for BalanceAdjustmentRequest.
+type BalanceAdjustmentRequest struct {
+	// Amount 增加的余额 USD；服务端原子累加
+	Amount float64 `json:"amount"`
+
+	// IdempotencyKey 可选请求幂等键；重复提交不会重复加款
+	IdempotencyKey *string `json:"idempotency_key,omitempty"`
+
+	// Note 管理员操作备注
+	Note *string `json:"note,omitempty"`
+}
+
 // BatchDeactivateRequest defines model for BatchDeactivateRequest.
 type BatchDeactivateRequest struct {
 	Ids []int64 `json:"ids"`
@@ -1553,7 +1565,7 @@ type ProviderBalanceSnapshotStatus string
 
 // RedemptionCode defines model for RedemptionCode.
 type RedemptionCode struct {
-	// Code XXXX-XXXX-XXXX-XXXX（16 字符，生成后不可编辑，仅可失效）
+	// Code 12 位随机大写英文字母（生成后不可编辑，仅可失效）
 	Code      string    `json:"Code"`
 	CreatedAt time.Time `json:"CreatedAt"`
 
@@ -1592,17 +1604,25 @@ type RedemptionCodeListResponse struct {
 
 // RedemptionHistory defines model for RedemptionHistory.
 type RedemptionHistory struct {
-	Code      string         `json:"Code"`
-	CodeID    int64          `json:"CodeID"`
-	CodeType  RedemptionType `json:"CodeType"`
-	CreatedAt time.Time      `json:"CreatedAt"`
+	// BalanceAfter 永久余额兑换后的用户余额 USD；其他类型为 null
+	BalanceAfter *float64 `json:"BalanceAfter"`
+
+	// BalanceBefore 永久余额兑换前的用户余额 USD；其他类型为 null
+	BalanceBefore *float64       `json:"BalanceBefore"`
+	Code          string         `json:"Code"`
+	CodeID        int64          `json:"CodeID"`
+	CodeType      RedemptionType `json:"CodeType"`
+	CreatedAt     time.Time      `json:"CreatedAt"`
 
 	// GroupID 活动额度限定分组快照
 	GroupID           *int64     `json:"GroupID"`
 	ID                int64      `json:"ID"`
 	Remark            *string    `json:"Remark"`
 	ResourceExpiresAt *time.Time `json:"ResourceExpiresAt"`
-	UserID            int64      `json:"UserID"`
+
+	// UserEmail 兑换用户邮箱，便于管理员溯源
+	UserEmail string `json:"UserEmail"`
+	UserID    int64  `json:"UserID"`
 
 	// Value 兑换时的值快照（同面值单位语义）
 	Value float64 `json:"Value"`
@@ -1622,8 +1642,13 @@ type RedemptionType string
 
 // RedemptionUse defines model for RedemptionUse.
 type RedemptionUse struct {
-	CodeID    int64     `json:"CodeID"`
-	CreatedAt time.Time `json:"CreatedAt"`
+	// BalanceAfter 永久余额兑换后的用户余额 USD；其他类型为 null
+	BalanceAfter *float64 `json:"BalanceAfter"`
+
+	// BalanceBefore 永久余额兑换前的用户余额 USD；其他类型为 null
+	BalanceBefore *float64  `json:"BalanceBefore"`
+	CodeID        int64     `json:"CodeID"`
+	CreatedAt     time.Time `json:"CreatedAt"`
 
 	// GroupID 活动额度限定分组快照
 	GroupID           *int64     `json:"GroupID"`
@@ -2300,10 +2325,19 @@ type UsageLogsSummary struct {
 // User defines model for User.
 type User struct {
 	// Balance 余额 USD（浮点；内部存储毫分——1 USD = 100,000 毫分，API 边界换算）
-	Balance        *float64    `json:"Balance,omitempty"`
-	CreatedAt      *time.Time  `json:"CreatedAt,omitempty"`
-	Email          *string     `json:"Email,omitempty"`
-	ID             *int64      `json:"ID,omitempty"`
+	Balance   *float64   `json:"Balance,omitempty"`
+	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
+	Email     *string    `json:"Email,omitempty"`
+	ID        *int64     `json:"ID,omitempty"`
+
+	// InviteCode 当前用户的邀请码；管理列表用于审计
+	InviteCode *string `json:"InviteCode"`
+
+	// InviterEmail 注册时绑定的邀请人邮箱，仅管理端用户列表返回
+	InviterEmail *string `json:"InviterEmail"`
+
+	// InviterID 注册时绑定的邀请人用户 ID
+	InviterID      *int64      `json:"InviterID"`
 	MaxConcurrency *int        `json:"MaxConcurrency,omitempty"`
 	Role           *UserRole   `json:"Role,omitempty"`
 	Status         *UserStatus `json:"Status,omitempty"`
@@ -2832,6 +2866,9 @@ type PostUsersJSONRequestBody = UserCreate
 // PutUsersIdJSONRequestBody defines body for PutUsersId for application/json ContentType.
 type PutUsersIdJSONRequestBody = UserUpdate
 
+// PostUsersIdBalanceJSONRequestBody defines body for PostUsersIdBalance for application/json ContentType.
+type PostUsersIdBalanceJSONRequestBody = BalanceAdjustmentRequest
+
 // PutUsersIdGroupsJSONRequestBody defines body for PutUsersIdGroups for application/json ContentType.
 type PutUsersIdGroupsJSONRequestBody = UserGroupsBody
 
@@ -3107,6 +3144,9 @@ type ServerInterface interface {
 	// 更新用户（role/status/max_concurrency/balance；变更即时生效——Auth 快照刷新）
 	// (PUT /users/{id})
 	PutUsersId(w http.ResponseWriter, r *http.Request, id int64)
+	// 管理员原子增加用户余额，并记录余额前后快照及邀请返利
+	// (POST /users/{id}/balance)
+	PostUsersIdBalance(w http.ResponseWriter, r *http.Request, id int64)
 	// 读取用户被授予的分组与各专属倍率（platform_admin；用户视角，与 /groups/{id}/assignments 对称）
 	// (GET /users/{id}/groups)
 	GetUsersIdGroups(w http.ResponseWriter, r *http.Request, id int64)
@@ -3645,6 +3685,12 @@ func (_ Unimplemented) GetAdminUsersTop(w http.ResponseWriter, r *http.Request, 
 // 更新用户（role/status/max_concurrency/balance；变更即时生效——Auth 快照刷新）
 // (PUT /users/{id})
 func (_ Unimplemented) PutUsersId(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 管理员原子增加用户余额，并记录余额前后快照及邀请返利
+// (POST /users/{id}/balance)
+func (_ Unimplemented) PostUsersIdBalance(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -6672,6 +6718,31 @@ func (siw *ServerInterfaceWrapper) PutUsersId(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// PostUsersIdBalance operation middleware
+func (siw *ServerInterfaceWrapper) PostUsersIdBalance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUsersIdBalance(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUsersIdGroups operation middleware
 func (siw *ServerInterfaceWrapper) GetUsersIdGroups(w http.ResponseWriter, r *http.Request) {
 
@@ -7104,6 +7175,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/users/{id}", wrapper.PutUsersId)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/users/{id}/balance", wrapper.PostUsersIdBalance)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/users/{id}/groups", wrapper.GetUsersIdGroups)

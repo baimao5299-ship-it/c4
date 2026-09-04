@@ -37,6 +37,7 @@ type Repository struct {
 	Stats          *StatRepo
 	Rules          RuleStore
 	Redemptions    *RedemptionRepo
+	Referrals      *ReferralRepo
 	PriceEntries   *PriceEntryRepo
 	PriceVariants  *PriceVariantRepo
 	Billing        *BillingRepo       // 扣费落库（Phase 5 T3）
@@ -105,6 +106,7 @@ func newRepositoryWithLocks(client *ent.Client, drv dialect.Driver, pool *pgxpoo
 		Stats:          &StatRepo{client: client, pool: pool},
 		Rules:          &RuleRepo{client: client},
 		Redemptions:    &RedemptionRepo{client: client, driver: drv},
+		Referrals:      &ReferralRepo{client: client, driver: drv},
 		PriceEntries:   &PriceEntryRepo{client: client, driver: drv},
 		PriceVariants:  &PriceVariantRepo{client: client},
 		Billing:        &BillingRepo{client: client, driver: drv, pool: pool},
@@ -530,6 +532,79 @@ func (r *Repository) CreateUser(ctx context.Context, u *domain.User) (*domain.Us
 	return r.Users.CreateUser(ctx, u)
 }
 
+// CreateUserWithReferral makes registration and its immutable invite binding
+// one transaction. The inviter row is checked inside that transaction.
+func (r *Repository) CreateUserWithReferral(ctx context.Context, u *domain.User, inviterID int64) (*domain.User, error) {
+	if u == nil || inviterID <= 0 {
+		return nil, fmt.Errorf("invalid referred registration")
+	}
+	tx, err := r.driver.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	drv := &txDriver{drv: r.driver, tx: tx}
+	tr := newRepositoryWithLocks(ent.NewClient(ent.Driver(drv)), drv, nil, true)
+	if _, err := tr.Users.GetUser(ctx, inviterID); err != nil {
+		return nil, err
+	}
+	created, err := tr.Users.CreateUser(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tr.Referrals.CreateReferral(ctx, inviterID, created.ID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	committed = true
+	return created, nil
+}
+
+func (r *Repository) GetUserByInviteCode(ctx context.Context, code string) (*domain.User, error) {
+	return r.Referrals.GetUserByInviteCode(ctx, code)
+}
+
+func (r *Repository) EnsureInviteCode(ctx context.Context, userID int64, code string) (*domain.User, error) {
+	return r.Referrals.EnsureInviteCode(ctx, userID, code)
+}
+
+func (r *Repository) GetReferralSummary(ctx context.Context, userID int64, now time.Time) (*domain.ReferralSummary, error) {
+	return r.Referrals.Summary(ctx, userID, now)
+}
+
+func (r *Repository) ListReferralRewards(ctx context.Context, userID int64, limit, offset int) ([]*domain.ReferralReward, int64, error) {
+	return r.Referrals.ListRewards(ctx, userID, limit, offset)
+}
+
+func (r *Repository) ListReferrals(ctx context.Context, inviterID, inviteeID int64, limit, offset int) ([]*domain.ReferralRecord, int64, error) {
+	return r.Referrals.ListReferrals(ctx, inviterID, inviteeID, limit, offset)
+}
+
+func (r *Repository) ListBalanceLedger(ctx context.Context, userID int64, limit, offset int) ([]*domain.BalanceLedgerEntry, int64, error) {
+	return r.Referrals.ListBalanceLedger(ctx, userID, limit, offset)
+}
+
+// ApplyBalanceCredit is intentionally available on transactional repository
+// values so redemption/admin credit and reward creation commit together.
+func (r *Repository) ApplyBalanceCredit(ctx context.Context, userID, amount int64, kind domain.BalanceLedgerKind, sourceID string, note *string, actorID *int64) (*domain.BalanceLedgerEntry, error) {
+	return r.Referrals.ApplyBalanceCredit(ctx, userID, amount, kind, sourceID, note, actorID)
+}
+
+func (r *Repository) ApplyBalanceSet(ctx context.Context, userID, target int64, sourceID string, note *string, actorID *int64) (*domain.BalanceLedgerEntry, error) {
+	return r.Referrals.ApplyBalanceSet(ctx, userID, target, sourceID, note, actorID)
+}
+
+func (r *Repository) ClaimAvailableReferralRewards(ctx context.Context, inviterID int64, now time.Time, sourceID string) (*domain.BalanceLedgerEntry, error) {
+	return r.Referrals.ClaimAvailable(ctx, inviterID, now, sourceID)
+}
+
 func (r *Repository) GetUser(ctx context.Context, id int64) (*domain.User, error) {
 	return r.Users.GetUser(ctx, id)
 }
@@ -874,6 +949,14 @@ func (r *Repository) IncrementUsed(ctx context.Context, codeID int64) (bool, err
 
 func (r *Repository) DeactivateCodes(ctx context.Context, ids []int64) (int64, error) {
 	return r.Redemptions.DeactivateCodes(ctx, ids)
+}
+
+func (r *Repository) DeactivateLegacyCodes(ctx context.Context) (int64, error) {
+	return r.Redemptions.DeactivateLegacyCodes(ctx)
+}
+
+func (r *Repository) DeactivateAllActiveCodes(ctx context.Context) (int64, error) {
+	return r.Redemptions.DeactivateAllActiveCodes(ctx)
 }
 
 // --- 统一价格条目 ---

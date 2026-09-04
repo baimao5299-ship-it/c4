@@ -276,7 +276,7 @@ func toAPIRedemptionCode(c *domain.RedemptionCode) RedemptionCode {
 // toAPIRedemptionUse 兑换审计领域对象 → 契约类型（Value 换算同 toAPIRedemptionCode；
 // use 行不存码类型，由调用方传码 type——审计端点先取码）。
 func toAPIRedemptionUse(codeType domain.RedemptionType, u *domain.RedemptionUse) RedemptionUse {
-	return RedemptionUse{
+	out := RedemptionUse{
 		ID:                u.ID,
 		CodeID:            u.CodeID,
 		UserID:            u.UserID,
@@ -285,13 +285,31 @@ func toAPIRedemptionUse(codeType domain.RedemptionType, u *domain.RedemptionUse)
 		GroupID:           u.GroupID,
 		CreatedAt:         u.CreatedAt,
 	}
+	if u.BalanceBefore != nil {
+		v := millisToUSD(*u.BalanceBefore)
+		out.BalanceBefore = &v
+	}
+	if u.BalanceAfter != nil {
+		v := millisToUSD(*u.BalanceAfter)
+		out.BalanceAfter = &v
+	}
+	return out
 }
 
 func toAPIRedemptionHistory(h *domain.RedemptionHistory) RedemptionHistory {
-	return RedemptionHistory{
-		ID: h.ID, CodeID: h.CodeID, Code: h.Code, UserID: h.UserID,
+	out := RedemptionHistory{
+		ID: h.ID, CodeID: h.CodeID, Code: h.Code, UserID: h.UserID, UserEmail: h.UserEmail,
 		CodeType: RedemptionType(h.CodeType), Value: redemptionValueToAPI(h.CodeType, h.Value),
 		Remark: h.Remark, ResourceExpiresAt: h.ResourceExpiresAt, CreatedAt: h.CreatedAt,
 		GroupID: h.GroupID,
 	}
+	if h.BalanceBefore != nil {
+		v := millisToUSD(*h.BalanceBefore)
+		out.BalanceBefore = &v
+	}
+	if h.BalanceAfter != nil {
+		v := millisToUSD(*h.BalanceAfter)
+		out.BalanceAfter = &v
+	}
+	return out
 }

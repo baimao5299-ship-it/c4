@@ -26,7 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/components/key-box'
-import { formatDateTime, toRFC3339 } from '@/components/fmt'
+import { formatDateTime, formatUSD, toRFC3339 } from '@/components/fmt'
 import type { components } from '@/lib/api/schema'
 
 type RedemptionCode = components['schemas']['RedemptionCode']
@@ -38,7 +38,9 @@ type RedemptionStatus = components['schemas']['RedemptionStatus']
 type GenerateRequest = components['schemas']['GenerateRequest']
 type GenerateRequestPayload = Omit<GenerateRequest, 'type'> & { type: RedemptionType; group_id?: number }
 type RedemptionCodeView = RedemptionCode & { GroupID?: number | null }
-type RedemptionHistoryView = components['schemas']['RedemptionHistory'] & { GroupID?: number | null }
+type BalanceTrace = { BalanceBefore?: number | null; BalanceAfter?: number | null }
+type RedemptionHistoryView = components['schemas']['RedemptionHistory'] & { GroupID?: number | null } & BalanceTrace
+type RedemptionUseView = components['schemas']['RedemptionUse'] & BalanceTrace
 
 const TYPES: RedemptionType[] = ['balance', 'concurrency', 'temp_balance', 'scoped_temp_balance']
 const STATUSES: RedemptionStatus[] = ['active', 'disabled']
@@ -289,6 +291,7 @@ export default function RedemptionCodes() {
     enabled: historyOpen && historyCodeIdValid && historyUserIdValid,
   })
   const historyRows = (historyQ.data?.rows ?? []) as RedemptionHistoryView[]
+  const historyHasBalanceTrace = historyRows.some(row => row.BalanceBefore != null || row.BalanceAfter != null)
   const historyTypeItems = Object.fromEntries([['all', t('redemptions.all')], ...TYPES.map(tp => [tp, t(`redemptions.type.${tp}`)])])
   const resetHistory = () => {
     setHistoryPage(1)
@@ -304,7 +307,8 @@ export default function RedemptionCodes() {
     queryFn: () => api.getRedemptionCodeUses(usesFor!.ID),
     enabled: !!usesFor,
   })
-  const usesRows = usesQ.data?.rows ?? []
+  const usesRows = (usesQ.data?.rows ?? []) as RedemptionUseView[]
+  const usesHaveBalanceTrace = usesRows.some(row => row.BalanceBefore != null || row.BalanceAfter != null)
 
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
 
@@ -639,6 +643,7 @@ export default function RedemptionCodes() {
                       <TableHead>{t('redemptions.historyTable.type')}</TableHead>
                       <TableHead>{t('redemptions.historyTable.group')}</TableHead>
                       <TableHead>{t('redemptions.historyTable.value')}</TableHead>
+                      {historyHasBalanceTrace && <TableHead>{t('redemptions.historyTable.balanceTrace')}</TableHead>}
                       <TableHead>{t('redemptions.historyTable.resourceExpiresAt')}</TableHead>
                       <TableHead>{t('redemptions.historyTable.createdAt')}</TableHead>
                     </TableRow>
@@ -655,6 +660,7 @@ export default function RedemptionCodes() {
                         <TableCell>{t(`redemptions.type.${row.CodeType}`)}</TableCell>
                         <TableCell>{groupLabel(row.GroupID)}</TableCell>
                         <TableCell className="tabular-nums">{formatValue({ Type: row.CodeType, Value: row.Value })}</TableCell>
+                        {historyHasBalanceTrace && <TableCell className="whitespace-nowrap tabular-nums">{row.BalanceBefore == null || row.BalanceAfter == null ? '—' : `${formatUSD(row.BalanceBefore)} → ${formatUSD(row.BalanceAfter)}`}</TableCell>}
                         <TableCell className="whitespace-nowrap text-sm">{formatDateTime(row.ResourceExpiresAt)}</TableCell>
                         <TableCell className="whitespace-nowrap text-sm">{formatDateTime(row.CreatedAt)}</TableCell>
                       </TableRow>
@@ -717,6 +723,7 @@ export default function RedemptionCodes() {
                     <TableHead>ID</TableHead>
                     <TableHead>{t('redemptions.table.userId')}</TableHead>
                     <TableHead>{t('redemptions.table.value')}</TableHead>
+                    {usesHaveBalanceTrace && <TableHead>{t('redemptions.historyTable.balanceTrace')}</TableHead>}
                     <TableHead>{t('redemptions.table.createdAt')}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -726,6 +733,7 @@ export default function RedemptionCodes() {
                       <TableCell className="tabular-nums">{u.ID}</TableCell>
                       <TableCell className="tabular-nums">{u.UserID}</TableCell>
                       <TableCell className="tabular-nums">{usesFor && formatValue({ Type: usesFor.Type, Value: u.Value })}</TableCell>
+                      {usesHaveBalanceTrace && <TableCell className="whitespace-nowrap tabular-nums">{u.BalanceBefore == null || u.BalanceAfter == null ? '—' : `${formatUSD(u.BalanceBefore)} → ${formatUSD(u.BalanceAfter)}`}</TableCell>}
                       <TableCell>{formatDateTime(u.CreatedAt)}</TableCell>
                     </TableRow>
                   ))}

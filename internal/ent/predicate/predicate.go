@@ -12,6 +12,9 @@ type Account func(*sql.Selector)
 // AccountExt is the predicate function for accountext builders.
 type AccountExt func(*sql.Selector)
 
+// BalanceLedger is the predicate function for balanceledger builders.
+type BalanceLedger func(*sql.Selector)
+
 // EmailTemplate is the predicate function for emailtemplate builders.
 type EmailTemplate func(*sql.Selector)
 
@@ -41,6 +44,12 @@ type RedemptionCode func(*sql.Selector)
 
 // RedemptionUse is the predicate function for redemptionuse builders.
 type RedemptionUse func(*sql.Selector)
+
+// Referral is the predicate function for referral builders.
+type Referral func(*sql.Selector)
+
+// ReferralReward is the predicate function for referralreward builders.
+type ReferralReward func(*sql.Selector)
 
 // Rule is the predicate function for rule builders.
 type Rule func(*sql.Selector)

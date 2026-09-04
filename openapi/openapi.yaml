@@ -883,6 +883,26 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
         default:
           $ref: '#/components/responses/Error'
+  /users/{id}/balance:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: PostUsersIdBalance
+      tags: [users]
+      summary: 管理员原子增加用户余额，并记录余额前后快照及邀请返利
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BalanceAdjustmentRequest' }
+      responses:
+        '200':
+          description: 加款后的用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        default:
+          $ref: '#/components/responses/Error'
   /users/{id}/groups:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -1335,6 +1355,37 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/UserAuthResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /api/user/referrals:
+    get:
+      operationId: GetUserReferrals
+      tags: [user]
+      summary: 当前用户的邀请码、邀请链接、返利汇总及最近返利记录
+      responses:
+        '200':
+          description: 邀请返利汇总
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferralSummary' }
+        default:
+          $ref: '#/components/responses/Error'
+  /api/user/referrals/claim:
+    post:
+      operationId: PostUserReferralsClaim
+      tags: [user]
+      summary: 将全部已满 24 小时的返利原子领取到主余额
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReferralClaimRequest' }
+      responses:
+        '200':
+          description: 领取后的邀请返利汇总
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferralSummary' }
         default:
           $ref: '#/components/responses/Error'
   /api/user/auth/login:
@@ -2720,6 +2771,9 @@ components:
         Status: { $ref: '#/components/schemas/UserStatus' }
         MaxConcurrency: { type: integer }
         Balance: { type: number, format: double, description: "余额 USD（浮点；内部存储毫分——1 USD = 100,000 毫分，API 边界换算）" }
+        InviteCode: { type: string, nullable: true, pattern: '^[A-Z]{12}$', description: 当前用户的邀请码；管理列表用于审计 }
+        InviterID: { type: integer, format: int64, nullable: true, description: 注册时绑定的邀请人用户 ID }
+        InviterEmail: { type: string, nullable: true, description: 注册时绑定的邀请人邮箱，仅管理端用户列表返回 }
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
     UserAuthRegister:
@@ -2729,6 +2783,7 @@ components:
         email: { type: string }
         password: { type: string }
         code: { type: string, description: "可选：邮箱验证码（mail.register_verification 开启时必填，否则 400 email verification required）" }
+        referral_code: { type: string, pattern: '^[A-Za-z]{12}$', description: 可选邀请码；只在注册时绑定，账号创建后不可补填或修改 }
     UserAuthLogin:
       type: object
       required: [email, password]
@@ -2805,6 +2860,13 @@ components:
         status: { $ref: '#/components/schemas/UserStatus' }
         max_concurrency: { type: integer }
         balance: { type: number, format: double, description: "余额 USD（浮点，≥ 0；1 USD = 100,000 毫分）" }
+    BalanceAdjustmentRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount: { type: number, format: double, minimum: 0, exclusiveMinimum: true, description: 增加的余额 USD；服务端原子累加 }
+        note: { type: string, maxLength: 200, description: 管理员操作备注 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 100, description: 可选请求幂等键；重复提交不会重复加款 }
     UserListResponse:
       type: object
       required: [total, rows]
@@ -3172,7 +3234,7 @@ components:
       required: [ID, Code, Type, Value, MaxUses, UsedCount, Status, CreatedBy, CreatedAt, UpdatedAt]
       properties:
         ID: { type: integer, format: int64 }
-        Code: { type: string, description: XXXX-XXXX-XXXX-XXXX（16 字符，生成后不可编辑，仅可失效） }
+        Code: { type: string, pattern: '^[A-Z]{12}$', description: 12 位随机大写英文字母（生成后不可编辑，仅可失效） }
         Type: { $ref: '#/components/schemas/RedemptionType' }
         Value: { type: number, format: double, description: 面值：balance/temp_balance = USD（1 = $1）；concurrency = 并发数（整数）。存储毫分（API 边界换算） }
         GroupID: { type: integer, format: int64, nullable: true, description: scoped_temp_balance 的限定分组；其他类型为 null }
@@ -3195,6 +3257,8 @@ components:
         Value: { type: number, format: double, description: 兑换时的值快照（同面值单位语义） }
         ResourceExpiresAt: { type: string, format: date-time, nullable: true }
         GroupID: { type: integer, format: int64, nullable: true, description: 活动额度限定分组快照 }
+        BalanceBefore: { type: number, format: double, nullable: true, description: 永久余额兑换前的用户余额 USD；其他类型为 null }
+        BalanceAfter: { type: number, format: double, nullable: true, description: 永久余额兑换后的用户余额 USD；其他类型为 null }
         CreatedAt: { type: string, format: date-time }
     RedemptionRecord:
       type: object
@@ -3208,6 +3272,8 @@ components:
         Remark: { type: string, nullable: true }
         ResourceExpiresAt: { type: string, format: date-time, nullable: true }
         GroupID: { type: integer, format: int64, nullable: true, description: 活动额度限定分组快照 }
+        BalanceBefore: { type: number, format: double, nullable: true, description: 永久余额兑换前的用户余额 USD；其他类型为 null }
+        BalanceAfter: { type: number, format: double, nullable: true, description: 永久余额兑换后的用户余额 USD；其他类型为 null }
         CreatedAt: { type: string, format: date-time }
     RedemptionCodeListResponse:
       type: object
@@ -3235,17 +3301,20 @@ components:
           items: { $ref: '#/components/schemas/RedemptionRecord' }
     RedemptionHistory:
       type: object
-      required: [ID, CodeID, Code, UserID, CodeType, Value, CreatedAt]
+      required: [ID, CodeID, Code, UserID, UserEmail, CodeType, Value, CreatedAt]
       properties:
         ID: { type: integer, format: int64 }
         CodeID: { type: integer, format: int64 }
         Code: { type: string }
         UserID: { type: integer, format: int64 }
+        UserEmail: { type: string, description: 兑换用户邮箱，便于管理员溯源 }
         CodeType: { $ref: '#/components/schemas/RedemptionType' }
         Value: { type: number, format: double, description: 兑换时的值快照（同面值单位语义） }
         Remark: { type: string, nullable: true }
         ResourceExpiresAt: { type: string, format: date-time, nullable: true }
         GroupID: { type: integer, format: int64, nullable: true, description: 活动额度限定分组快照 }
+        BalanceBefore: { type: number, format: double, nullable: true, description: 永久余额兑换前的用户余额 USD；其他类型为 null }
+        BalanceAfter: { type: number, format: double, nullable: true, description: 永久余额兑换后的用户余额 USD；其他类型为 null }
         CreatedAt: { type: string, format: date-time }
     RedemptionHistoryListResponse:
       type: object
@@ -3255,6 +3324,37 @@ components:
         rows:
           type: array
           items: { $ref: '#/components/schemas/RedemptionHistory' }
+    ReferralReward:
+      type: object
+      required: [id, invitee_email, source_type, base_amount, reward_amount, status, available_at, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        invitee_email: { type: string, description: 被邀请用户邮箱 }
+        source_type: { type: string, enum: [redemption, admin_credit] }
+        base_amount: { type: number, format: double, description: 触发返利的实际入账金额 USD }
+        reward_amount: { type: number, format: double, description: 5% 返利金额 USD }
+        status: { type: string, enum: [frozen, claimable, claimed, reversed] }
+        available_at: { type: string, format: date-time }
+        claimed_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    ReferralSummary:
+      type: object
+      required: [invite_code, invite_link, invited_count, frozen_amount, claimable_amount, claimed_amount, rewards]
+      properties:
+        invite_code: { type: string, pattern: '^[A-Z]{12}$' }
+        invite_link: { type: string, format: uri }
+        invited_count: { type: integer, format: int64 }
+        frozen_amount: { type: number, format: double, description: 未满 24 小时的返利 USD }
+        claimable_amount: { type: number, format: double, description: 已满 24 小时待领取返利 USD }
+        claimed_amount: { type: number, format: double, description: 历史已领取返利 USD }
+        rewards:
+          type: array
+          items: { $ref: '#/components/schemas/ReferralReward' }
+    ReferralClaimRequest:
+      type: object
+      required: [request_id]
+      properties:
+        request_id: { type: string, minLength: 8, maxLength: 100, description: 客户端生成的领取幂等键 }
     # --- 临时额度（/api/user/temp-balances + /api/admin/temp-balances，spec 2026-08-15） ---
     # 用户侧仅有效额度（amount > 0 且未过期，FEFO 同序）；管理侧全量视角。
     # amount_usd = 毫分 /1e5（API 边界换算，内部存储恒毫分）。

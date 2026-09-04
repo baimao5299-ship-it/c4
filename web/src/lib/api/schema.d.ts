@@ -664,6 +664,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 管理员原子增加用户余额，并记录余额前后快照及邀请返利 */
+        post: operations["PostUsersIdBalance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/groups": {
         parameters: {
             query?: never;
@@ -981,6 +1000,40 @@ export interface paths {
         put?: never;
         /** 注册（signup_enabled 开关检查；注册即登录返回 JWT） */
         post: operations["PostUserAuthRegister"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/referrals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前用户的邀请码、邀请链接、返利汇总及最近返利记录 */
+        get: operations["GetUserReferrals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/referrals/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 将全部已满 24 小时的返利原子领取到主余额 */
+        post: operations["PostUserReferralsClaim"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2321,6 +2374,15 @@ export interface components {
              * @description 余额 USD（浮点；内部存储毫分——1 USD = 100,000 毫分，API 边界换算）
              */
             Balance?: number;
+            /** @description 当前用户的邀请码；管理列表用于审计 */
+            InviteCode?: string | null;
+            /**
+             * Format: int64
+             * @description 注册时绑定的邀请人用户 ID
+             */
+            InviterID?: number | null;
+            /** @description 注册时绑定的邀请人邮箱，仅管理端用户列表返回 */
+            InviterEmail?: string | null;
             /** Format: date-time */
             CreatedAt?: string;
             /** Format: date-time */
@@ -2331,6 +2393,8 @@ export interface components {
             password: string;
             /** @description 可选：邮箱验证码（mail.register_verification 开启时必填，否则 400 email verification required） */
             code?: string;
+            /** @description 可选邀请码；只在注册时绑定，账号创建后不可补填或修改 */
+            referral_code?: string;
         };
         UserAuthLogin: {
             email: string;
@@ -2397,6 +2461,17 @@ export interface components {
              * @description 余额 USD（浮点，≥ 0；1 USD = 100,000 毫分）
              */
             balance?: number;
+        };
+        BalanceAdjustmentRequest: {
+            /**
+             * Format: double
+             * @description 增加的余额 USD；服务端原子累加
+             */
+            amount: number;
+            /** @description 管理员操作备注 */
+            note?: string;
+            /** @description 可选请求幂等键；重复提交不会重复加款 */
+            idempotency_key?: string;
         };
         UserListResponse: {
             /** Format: int64 */
@@ -2703,7 +2778,7 @@ export interface components {
         RedemptionCode: {
             /** Format: int64 */
             ID: number;
-            /** @description XXXX-XXXX-XXXX-XXXX（16 字符，生成后不可编辑，仅可失效） */
+            /** @description 12 位随机大写英文字母（生成后不可编辑，仅可失效） */
             Code: string;
             Type: components["schemas"]["RedemptionType"];
             /**
@@ -2761,6 +2836,16 @@ export interface components {
              * @description 活动额度限定分组快照
              */
             GroupID?: number | null;
+            /**
+             * Format: double
+             * @description 永久余额兑换前的用户余额 USD；其他类型为 null
+             */
+            BalanceBefore?: number | null;
+            /**
+             * Format: double
+             * @description 永久余额兑换后的用户余额 USD；其他类型为 null
+             */
+            BalanceAfter?: number | null;
             /** Format: date-time */
             CreatedAt: string;
         };
@@ -2784,6 +2869,16 @@ export interface components {
              * @description 活动额度限定分组快照
              */
             GroupID?: number | null;
+            /**
+             * Format: double
+             * @description 永久余额兑换前的用户余额 USD；其他类型为 null
+             */
+            BalanceBefore?: number | null;
+            /**
+             * Format: double
+             * @description 永久余额兑换后的用户余额 USD；其他类型为 null
+             */
+            BalanceAfter?: number | null;
             /** Format: date-time */
             CreatedAt: string;
         };
@@ -2810,6 +2905,8 @@ export interface components {
             Code: string;
             /** Format: int64 */
             UserID: number;
+            /** @description 兑换用户邮箱，便于管理员溯源 */
+            UserEmail: string;
             CodeType: components["schemas"]["RedemptionType"];
             /**
              * Format: double
@@ -2824,6 +2921,16 @@ export interface components {
              * @description 活动额度限定分组快照
              */
             GroupID?: number | null;
+            /**
+             * Format: double
+             * @description 永久余额兑换前的用户余额 USD；其他类型为 null
+             */
+            BalanceBefore?: number | null;
+            /**
+             * Format: double
+             * @description 永久余额兑换后的用户余额 USD；其他类型为 null
+             */
+            BalanceAfter?: number | null;
             /** Format: date-time */
             CreatedAt: string;
         };
@@ -2831,6 +2938,59 @@ export interface components {
             /** Format: int64 */
             total: number;
             rows: components["schemas"]["RedemptionHistory"][];
+        };
+        ReferralReward: {
+            /** Format: int64 */
+            id: number;
+            /** @description 被邀请用户邮箱 */
+            invitee_email: string;
+            /** @enum {string} */
+            source_type: "redemption" | "admin_credit";
+            /**
+             * Format: double
+             * @description 触发返利的实际入账金额 USD
+             */
+            base_amount: number;
+            /**
+             * Format: double
+             * @description 5% 返利金额 USD
+             */
+            reward_amount: number;
+            /** @enum {string} */
+            status: "frozen" | "claimable" | "claimed" | "reversed";
+            /** Format: date-time */
+            available_at: string;
+            /** Format: date-time */
+            claimed_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ReferralSummary: {
+            invite_code: string;
+            /** Format: uri */
+            invite_link: string;
+            /** Format: int64 */
+            invited_count: number;
+            /**
+             * Format: double
+             * @description 未满 24 小时的返利 USD
+             */
+            frozen_amount: number;
+            /**
+             * Format: double
+             * @description 已满 24 小时待领取返利 USD
+             */
+            claimable_amount: number;
+            /**
+             * Format: double
+             * @description 历史已领取返利 USD
+             */
+            claimed_amount: number;
+            rewards: components["schemas"]["ReferralReward"][];
+        };
+        ReferralClaimRequest: {
+            /** @description 客户端生成的领取幂等键 */
+            request_id: string;
         };
         TempBalanceRow: {
             /** Format: int64 */
@@ -5101,6 +5261,33 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    PostUsersIdBalance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BalanceAdjustmentRequest"];
+            };
+        };
+        responses: {
+            /** @description 加款后的用户 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     GetUsersIdGroups: {
         parameters: {
             query?: never;
@@ -5749,6 +5936,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserAuthResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserReferrals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 邀请返利汇总 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferralSummary"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUserReferralsClaim: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferralClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description 领取后的邀请返利汇总 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferralSummary"];
                 };
             };
             default: components["responses"]["Error"];

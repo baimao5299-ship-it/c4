@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.0.1-beta.30] - 2026-09-04
+
+- Add immutable 12-letter invitation codes and registration referral links.
+- Credit inviters 5% rewards on permanent balance redemption and admin top-ups,
+  frozen for 24 hours with idempotent claiming.
+- Add balance before/after audit snapshots, redeemer identity, inviter links,
+  and cleanup-safe redemption inventory migration.
+- Route legacy absolute balance updates through the audited atomic path.
+
 All notable changes to C4 are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versioning follows the policy below.

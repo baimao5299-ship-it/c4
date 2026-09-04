@@ -17,6 +17,12 @@ func toDomainUser(u *ent.User) *domain.User {
 		Role: domain.Role(u.Role), Status: domain.UserStatus(u.Status),
 		TokenVersion:   u.TokenVersion,
 		MaxConcurrency: u.MaxConcurrency, Balance: u.Balance,
+		InviteCode: func() string {
+			if u.InviteCode == nil {
+				return ""
+			}
+			return *u.InviteCode
+		}(),
 		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	}
 }

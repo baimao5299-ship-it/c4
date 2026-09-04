@@ -69,6 +69,34 @@ func (_c *RedemptionUseCreate) SetNillableResourceExpiresAt(v *time.Time) *Redem
 	return _c
 }
 
+// SetBalanceBefore sets the "balance_before" field.
+func (_c *RedemptionUseCreate) SetBalanceBefore(v int64) *RedemptionUseCreate {
+	_c.mutation.SetBalanceBefore(v)
+	return _c
+}
+
+// SetNillableBalanceBefore sets the "balance_before" field if the given value is not nil.
+func (_c *RedemptionUseCreate) SetNillableBalanceBefore(v *int64) *RedemptionUseCreate {
+	if v != nil {
+		_c.SetBalanceBefore(*v)
+	}
+	return _c
+}
+
+// SetBalanceAfter sets the "balance_after" field.
+func (_c *RedemptionUseCreate) SetBalanceAfter(v int64) *RedemptionUseCreate {
+	_c.mutation.SetBalanceAfter(v)
+	return _c
+}
+
+// SetNillableBalanceAfter sets the "balance_after" field if the given value is not nil.
+func (_c *RedemptionUseCreate) SetNillableBalanceAfter(v *int64) *RedemptionUseCreate {
+	if v != nil {
+		_c.SetBalanceAfter(*v)
+	}
+	return _c
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_c *RedemptionUseCreate) SetCreatedAt(v time.Time) *RedemptionUseCreate {
 	_c.mutation.SetCreatedAt(v)
@@ -200,6 +228,14 @@ func (_c *RedemptionUseCreate) createSpec() (*RedemptionUse, *sqlgraph.CreateSpe
 	if value, ok := _c.mutation.ResourceExpiresAt(); ok {
 		_spec.SetField(redemptionuse.FieldResourceExpiresAt, field.TypeTime, value)
 		_node.ResourceExpiresAt = &value
+	}
+	if value, ok := _c.mutation.BalanceBefore(); ok {
+		_spec.SetField(redemptionuse.FieldBalanceBefore, field.TypeInt64, value)
+		_node.BalanceBefore = &value
+	}
+	if value, ok := _c.mutation.BalanceAfter(); ok {
+		_spec.SetField(redemptionuse.FieldBalanceAfter, field.TypeInt64, value)
+		_node.BalanceAfter = &value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(redemptionuse.FieldCreatedAt, field.TypeTime, value)
@@ -361,6 +397,54 @@ func (u *RedemptionUseUpsert) UpdateResourceExpiresAt() *RedemptionUseUpsert {
 // ClearResourceExpiresAt clears the value of the "resource_expires_at" field.
 func (u *RedemptionUseUpsert) ClearResourceExpiresAt() *RedemptionUseUpsert {
 	u.SetNull(redemptionuse.FieldResourceExpiresAt)
+	return u
+}
+
+// SetBalanceBefore sets the "balance_before" field.
+func (u *RedemptionUseUpsert) SetBalanceBefore(v int64) *RedemptionUseUpsert {
+	u.Set(redemptionuse.FieldBalanceBefore, v)
+	return u
+}
+
+// UpdateBalanceBefore sets the "balance_before" field to the value that was provided on create.
+func (u *RedemptionUseUpsert) UpdateBalanceBefore() *RedemptionUseUpsert {
+	u.SetExcluded(redemptionuse.FieldBalanceBefore)
+	return u
+}
+
+// AddBalanceBefore adds v to the "balance_before" field.
+func (u *RedemptionUseUpsert) AddBalanceBefore(v int64) *RedemptionUseUpsert {
+	u.Add(redemptionuse.FieldBalanceBefore, v)
+	return u
+}
+
+// ClearBalanceBefore clears the value of the "balance_before" field.
+func (u *RedemptionUseUpsert) ClearBalanceBefore() *RedemptionUseUpsert {
+	u.SetNull(redemptionuse.FieldBalanceBefore)
+	return u
+}
+
+// SetBalanceAfter sets the "balance_after" field.
+func (u *RedemptionUseUpsert) SetBalanceAfter(v int64) *RedemptionUseUpsert {
+	u.Set(redemptionuse.FieldBalanceAfter, v)
+	return u
+}
+
+// UpdateBalanceAfter sets the "balance_after" field to the value that was provided on create.
+func (u *RedemptionUseUpsert) UpdateBalanceAfter() *RedemptionUseUpsert {
+	u.SetExcluded(redemptionuse.FieldBalanceAfter)
+	return u
+}
+
+// AddBalanceAfter adds v to the "balance_after" field.
+func (u *RedemptionUseUpsert) AddBalanceAfter(v int64) *RedemptionUseUpsert {
+	u.Add(redemptionuse.FieldBalanceAfter, v)
+	return u
+}
+
+// ClearBalanceAfter clears the value of the "balance_after" field.
+func (u *RedemptionUseUpsert) ClearBalanceAfter() *RedemptionUseUpsert {
+	u.SetNull(redemptionuse.FieldBalanceAfter)
 	return u
 }
 
@@ -526,6 +610,62 @@ func (u *RedemptionUseUpsertOne) UpdateResourceExpiresAt() *RedemptionUseUpsertO
 func (u *RedemptionUseUpsertOne) ClearResourceExpiresAt() *RedemptionUseUpsertOne {
 	return u.Update(func(s *RedemptionUseUpsert) {
 		s.ClearResourceExpiresAt()
+	})
+}
+
+// SetBalanceBefore sets the "balance_before" field.
+func (u *RedemptionUseUpsertOne) SetBalanceBefore(v int64) *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.SetBalanceBefore(v)
+	})
+}
+
+// AddBalanceBefore adds v to the "balance_before" field.
+func (u *RedemptionUseUpsertOne) AddBalanceBefore(v int64) *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.AddBalanceBefore(v)
+	})
+}
+
+// UpdateBalanceBefore sets the "balance_before" field to the value that was provided on create.
+func (u *RedemptionUseUpsertOne) UpdateBalanceBefore() *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.UpdateBalanceBefore()
+	})
+}
+
+// ClearBalanceBefore clears the value of the "balance_before" field.
+func (u *RedemptionUseUpsertOne) ClearBalanceBefore() *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.ClearBalanceBefore()
+	})
+}
+
+// SetBalanceAfter sets the "balance_after" field.
+func (u *RedemptionUseUpsertOne) SetBalanceAfter(v int64) *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.SetBalanceAfter(v)
+	})
+}
+
+// AddBalanceAfter adds v to the "balance_after" field.
+func (u *RedemptionUseUpsertOne) AddBalanceAfter(v int64) *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.AddBalanceAfter(v)
+	})
+}
+
+// UpdateBalanceAfter sets the "balance_after" field to the value that was provided on create.
+func (u *RedemptionUseUpsertOne) UpdateBalanceAfter() *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.UpdateBalanceAfter()
+	})
+}
+
+// ClearBalanceAfter clears the value of the "balance_after" field.
+func (u *RedemptionUseUpsertOne) ClearBalanceAfter() *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.ClearBalanceAfter()
 	})
 }
 
@@ -859,6 +999,62 @@ func (u *RedemptionUseUpsertBulk) UpdateResourceExpiresAt() *RedemptionUseUpsert
 func (u *RedemptionUseUpsertBulk) ClearResourceExpiresAt() *RedemptionUseUpsertBulk {
 	return u.Update(func(s *RedemptionUseUpsert) {
 		s.ClearResourceExpiresAt()
+	})
+}
+
+// SetBalanceBefore sets the "balance_before" field.
+func (u *RedemptionUseUpsertBulk) SetBalanceBefore(v int64) *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.SetBalanceBefore(v)
+	})
+}
+
+// AddBalanceBefore adds v to the "balance_before" field.
+func (u *RedemptionUseUpsertBulk) AddBalanceBefore(v int64) *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.AddBalanceBefore(v)
+	})
+}
+
+// UpdateBalanceBefore sets the "balance_before" field to the value that was provided on create.
+func (u *RedemptionUseUpsertBulk) UpdateBalanceBefore() *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.UpdateBalanceBefore()
+	})
+}
+
+// ClearBalanceBefore clears the value of the "balance_before" field.
+func (u *RedemptionUseUpsertBulk) ClearBalanceBefore() *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.ClearBalanceBefore()
+	})
+}
+
+// SetBalanceAfter sets the "balance_after" field.
+func (u *RedemptionUseUpsertBulk) SetBalanceAfter(v int64) *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.SetBalanceAfter(v)
+	})
+}
+
+// AddBalanceAfter adds v to the "balance_after" field.
+func (u *RedemptionUseUpsertBulk) AddBalanceAfter(v int64) *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.AddBalanceAfter(v)
+	})
+}
+
+// UpdateBalanceAfter sets the "balance_after" field to the value that was provided on create.
+func (u *RedemptionUseUpsertBulk) UpdateBalanceAfter() *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.UpdateBalanceAfter()
+	})
+}
+
+// ClearBalanceAfter clears the value of the "balance_after" field.
+func (u *RedemptionUseUpsertBulk) ClearBalanceAfter() *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.ClearBalanceAfter()
 	})
 }
 
