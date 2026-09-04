@@ -59,3 +59,24 @@ func TestUpstreamValidationTaskUnknownIDIsNotFound(t *testing.T) {
 	h.Router().ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+func TestUpstreamValidationTaskStartReusesActiveTask(t *testing.T) {
+	h := New(nil)
+	active := newUpstreamValidationTask()
+	active.setRunning()
+	h.validationTasks[active.id] = active
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/upstreams/validate-all/start", nil)
+	h.Router().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	var started struct {
+		TaskID string `json:"task_id"`
+		Status string `json:"status"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &started))
+	require.Equal(t, active.id, started.TaskID)
+	require.Equal(t, "running", started.Status)
+	require.Len(t, h.validationTasks, 1)
+}

@@ -248,6 +248,7 @@
     "batchValidationFailedGeneric": "The validation task failed",
     "batchValidationTimedOut": "The validation task did not finish in time",
     "batchValidationConflict": "Another validation is already running. Try again when it finishes.",
+    "validationBusy": "Full model validation is still running in the background. Wait for it to finish before changing an upstream.",
     "batchValidationLocks": "Validation is running. Other upstream actions are temporarily disabled to keep results consistent.",
     "batchValidationRefreshFailed": "Validation finished, but the upstream list could not be refreshed. Reload the page to see the latest state.",
     "batchTotal": "Total upstreams",

@@ -162,6 +162,10 @@ function isDuplicateNameConflict(error: unknown): boolean {
   return error instanceof ApiError && error.status === 409 && (error.code === 'duplicate_name' || (!error.code && /name=/.test(error.message)))
 }
 
+function isModelValidationConflict(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && /upstream model validation is in progress/i.test(error.message)
+}
+
 function probeErrorLabel(code: string | null | undefined, t: (key: string) => string): string {
   const normalized = code?.trim() || 'unknown'
   const key = `upstreams.probeErrors.${normalized}`
@@ -450,7 +454,9 @@ export default function Upstreams() {
       }
       return { ok: true }
     } catch (error) {
-      const reason = batchValidationErrorMessage(error, t) ?? t('upstreams.probeErrors.unknown')
+      const reason = isModelValidationConflict(error)
+        ? t('upstreams.validationBusy')
+        : batchValidationErrorMessage(error, t) ?? t('upstreams.probeErrors.unknown')
       if (reportFailure) toast.add({ title: t('upstreams.actionFailed', { message: reason }), type: 'error' })
       return { ok: false, reason }
     } finally {
@@ -489,6 +495,8 @@ export default function Upstreams() {
         toast.add({ title: t('upstreams.staleUpdate'), type: 'warning' })
       } else if (isDuplicateNameConflict(error)) {
         toast.add({ title: t('upstreams.duplicateName'), type: 'error' })
+      } else if (isModelValidationConflict(error)) {
+        toast.add({ title: t('upstreams.validationBusy'), type: 'warning' })
       } else {
         const message = errorMessage(error)
         const validationCode = modelValidationErrorCode(error)

@@ -248,6 +248,7 @@
     "batchValidationFailedGeneric": "验证任务执行失败",
     "batchValidationTimedOut": "验证任务在规定时间内未完成",
     "batchValidationConflict": "已有验证正在进行，请等待完成后再试",
+    "validationBusy": "全部模型验证仍在后台运行，请等待进度完成后再操作上游",
     "batchValidationLocks": "正在进行批量验证，为保持结果一致，其他上游操作暂时停用。",
     "batchValidationRefreshFailed": "验证已完成，但上游列表刷新失败，请手动刷新页面查看最新状态。",
     "batchTotal": "上游总数",

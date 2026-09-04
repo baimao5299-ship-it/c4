@@ -10,11 +10,17 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.27] - 2026-09-04
+
 ### Fixed
 
 - Model catalogue discovery now accepts common camelCase/capitalized model
   identifiers and keyed model maps returned by compatible relays, preventing a
   successful catalogue from being reported as empty.
+- Repeated clicks on full upstream validation now reconnect to the active task
+  instead of starting a second worker that immediately reports a conflict.
+- Upstream actions attempted during full validation now explain in plain
+  language that the background validation is still running.
 
 ## [v0.0.1-beta.26] - 2026-09-04
 

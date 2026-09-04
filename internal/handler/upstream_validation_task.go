@@ -144,11 +144,30 @@ func (h *AdminAPI) PostUpstreamsValidateAllStart(w http.ResponseWriter, r *http.
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	h.cleanupValidationTasks(time.Now())
-	task := newUpstreamValidationTask()
 	h.validationTasksMu.Lock()
 	if h.validationTasks == nil {
 		h.validationTasks = make(map[string]*upstreamValidationTask)
 	}
+	// Starting the worker is asynchronous, so two quick clicks can otherwise
+	// both receive 202 before either goroutine acquires the service lock. The
+	// second task then fails immediately with a conflict while the first keeps
+	// running, which looks like the validation was forcibly interrupted. Reuse
+	// the active task instead so every browser follows the same progress record.
+	for _, active := range h.validationTasks {
+		active.mu.RLock()
+		status := active.status
+		active.mu.RUnlock()
+		if status != upstreamValidationTaskQueued && status != upstreamValidationTaskRunning {
+			continue
+		}
+		h.validationTasksMu.Unlock()
+		httpface.WriteJSON(w, http.StatusAccepted, map[string]any{
+			"task_id": active.id,
+			"status":  status,
+		})
+		return
+	}
+	task := newUpstreamValidationTask()
 	h.validationTasks[task.id] = task
 	h.validationTasksMu.Unlock()
 
