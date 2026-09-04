@@ -197,6 +197,35 @@ func TestNumericModelAliasIsConservative(t *testing.T) {
 	}
 }
 
+func TestPricingAliasMatchesServingVariants(t *testing.T) {
+	fs := newFakeStore()
+	for model, pair := range map[string][2]int64{
+		"gemini-3.8-flash": {75000, 375000},
+		"gemini-2.5-flash": {30000, 250000},
+		"claude-opus-4-6":  {500000, 2500000},
+	} {
+		input, output := pair[0], pair[1]
+		_, err := fs.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{{
+			Model: model, Mode: domain.PriceModeToken, InputPerM: &input, OutputPerM: &output,
+			Source: domain.PricingSourceLitellm,
+		}})
+		require.NoError(t, err)
+	}
+	svc := newPricingSvc(t, fs)
+	for requested, wantInput := range map[string]int64{
+		"gemini-3-8-flash-high":     75000,
+		"gemini-3-8-flash-low":      75000,
+		"gemini-3-8-flash-medium":   75000,
+		"gemini-3-8-flash-tiered":   75000,
+		"gemini-2-5-flash-thinking": 30000,
+		"claude-opus-4-6-thinking":  500000,
+	} {
+		got, ok := svc.ResolvePrices(requested, 0, "", time.Now())
+		require.Truef(t, ok, "expected serving variant %q to resolve", requested)
+		require.Equal(t, wantInput, *got.InputPerM)
+	}
+}
+
 func TestPricingProjectionAndBatchLookupUseAliasIndex(t *testing.T) {
 	fs := newFakeStore()
 	inPrice, outPrice := int64(250000), int64(1000000)

@@ -106,6 +106,7 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 	requestedNumericBase := numericModelAlias(requestedBase)
 	keyNumericSnapshotBase := numericModelAlias(keySnapshotBase)
 	requestedNumericSnapshotBase := numericModelAlias(requestedSnapshotBase)
+	requestedVariantBase, requestedHasVariant := stripServingVariant(requestedBase)
 	if key == requested {
 		return 100
 	}
@@ -161,6 +162,24 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 			return 54
 		}
 		return 79
+	}
+	// Relay-specific reasoning tiers are serving variants of the same priced
+	// model. Exact rows still win above; this fallback is deliberately limited
+	// to known tier suffixes and keeps the root-vs-provider preference.
+	if requestedHasVariant {
+		variantRank := 74
+		if !requestedQualified && keyQualified {
+			variantRank = 54
+		}
+		if keyBase == requestedVariantBase {
+			return variantRank
+		}
+		if strings.EqualFold(modelMatchKey(keyBase), modelMatchKey(requestedVariantBase)) {
+			return variantRank - 1
+		}
+		if numericModelAlias(keyBase) == numericModelAlias(requestedVariantBase) {
+			return variantRank - 2
+		}
 	}
 	if keyHasSnapshot && !requestedHasSnapshot && keyNumericSnapshotBase == requestedNumericBase {
 		if !requestedQualified && keyQualified {
@@ -291,6 +310,21 @@ func modelBasename(model string) string {
 		return model[slash+1:]
 	}
 	return model
+}
+
+// stripServingVariant removes routing-only capability suffixes used by a few
+// relay catalogues. These suffixes select a reasoning tier but keep the same
+// billable model price; an exact price row for the full identifier still wins
+// before this fallback is considered.
+func stripServingVariant(model string) (string, bool) {
+	model = strings.TrimSpace(model)
+	lower := strings.ToLower(model)
+	for _, suffix := range []string{"-high", "-low", "-medium", "-tiered", "-thinking", "-nothinking"} {
+		if strings.HasSuffix(lower, suffix) && len(model) > len(suffix) {
+			return model[:len(model)-len(suffix)], true
+		}
+	}
+	return model, false
 }
 
 func modelMatchKey(model string) string {

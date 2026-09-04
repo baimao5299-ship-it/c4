@@ -10,6 +10,16 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.28] - 2026-09-04
+
+### Fixed
+
+- Pricing lookup now resolves known relay reasoning-tier suffixes (`high`,
+  `low`, `medium`, `tiered`, `thinking`, and `nothinking`) to the matching
+  official model price when no dedicated variant price exists. Exact variant
+  rows still take precedence, so every group can display and bill its model
+  without guessing across unrelated products.
+
 ## [v0.0.1-beta.27] - 2026-09-04
 
 ### Fixed
