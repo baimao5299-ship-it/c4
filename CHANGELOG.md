@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.0.1-beta.35] - 2026-09-05
+
+### Fixed
+
+- Detect WebSocket-only Responses routes before model capability validation.
+  Such upstreams now fall back to Chat Completions after a bounded route check,
+  so advertised models such as `gpt-6-astra` are not lost to repeated HTTP
+  timeouts.
+
 ## [v0.0.1-beta.34] - 2026-09-05
 
 - Expose administrator referral relationship and balance-ledger audit views.

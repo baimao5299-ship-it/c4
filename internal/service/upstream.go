@@ -2040,6 +2040,10 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// Share route-preflight state across this catalogue run without a process-
+	// global cache. This keeps independent tests/clients isolated while avoiding
+	// one GET per model after a WebSocket-only Responses route is confirmed.
+	ctx = context.WithValue(ctx, responsesProbeRouteStateKey{}, &responsesProbeRouteState{})
 	models = dedupeProbeModels(models)
 	if len(models) == 0 {
 		return upstreamModelValidation{ValidationComplete: true}
@@ -2710,6 +2714,68 @@ const (
 	responsesProbeOmitStream
 )
 
+// responsesProbeRouteDisabledKey is set after a zero-cost route preflight
+// proves that an upstream exposes Responses only through a non-HTTP transport
+// (typically WebSocket). Such relays otherwise make every model probe wait for
+// the full HTTP timeout before the existing Chat fallback can run.
+type responsesProbeRouteDisabledKey struct{}
+type responsesProbeRouteState struct{ disabled atomic.Bool }
+
+const upstreamResponsesRouteAttemptTimeout = 5 * time.Second
+
+func withResponsesProbeRouteDisabled(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, responsesProbeRouteDisabledKey{}, true)
+}
+
+func responsesProbeRouteIsDisabled(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	if disabled, ok := ctx.Value(responsesProbeRouteDisabledKey{}).(bool); ok {
+		return disabled
+	}
+	state, _ := ctx.Value(responsesProbeRouteStateKey{}).(*responsesProbeRouteState)
+	return state != nil && state.disabled.Load()
+}
+
+type responsesProbeRouteStateKey struct{}
+
+// responsesHTTPRouteDisabled performs one bounded GET before model validation.
+// A 426 response that explicitly asks for a WebSocket upgrade is a definitive
+// transport mismatch, not a model failure, so all model probes should start on
+// Chat Completions for this upstream. Network errors are left to the normal
+// probe path and never disable Responses speculatively.
+func responsesHTTPRouteDisabled(ctx context.Context, client *http.Client, base, key string) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	preflightCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(preflightCtx, http.MethodGet, upstreamURL(base, "/v1/responses"), nil)
+	if err != nil {
+		return false
+	}
+	setUpstreamAuthHeader(req, key, upstreamAuthBearer)
+	resp, err := client.Do(req)
+	if err != nil || resp == nil {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUpgradeRequired {
+		return false
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+	message := strings.ToLower(string(body))
+	upgrade := strings.ToLower(strings.TrimSpace(resp.Header.Get("Upgrade")))
+	return strings.Contains(upgrade, "websocket") || strings.Contains(message, "websocket")
+}
+
 // sendUpstreamResponsesProbe starts with the ordinary Responses request and
 // performs at most four compatibility retries.  A retry is allowed only when
 // the relay explicitly rejected the request shape before model execution;
@@ -2764,8 +2830,34 @@ func sendUpstreamModelProbeWithPreferredShape(ctx context.Context, client *http.
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// Some relays advertise the Responses path but only implement it as a
+	// WebSocket endpoint. The validator marks that transport mismatch once per
+	// upstream; skip the doomed HTTP POST and probe the model through Chat.
+	if responsesProbeRouteIsDisabled(ctx) {
+		status, requestErr := sendUpstreamChatProbeShape(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model, shape)
+		return status, domain.FormatOpenAIChat, requestErr
+	}
 	format := domain.FormatOpenAIResponses
-	status, requestErr := sendUpstreamResponsesProbeShape(ctx, client, upstreamURL(base, "/v1/responses"), key, model, shape)
+	// Reserve part of the per-model budget for a zero-cost route check and the
+	// compatible Chat request. Without a child deadline, a WebSocket-only
+	// Responses route consumes the entire model context and leaves no time for
+	// the fallback that would prove the model is usable.
+	responsesCtx := ctx
+	responsesCancel := func() {}
+	if deadline, hasDeadline := ctx.Deadline(); hasDeadline && time.Until(deadline) <= upstreamModelValidationPerModel+time.Second && supportsUpstreamProbeTrace(client) {
+		responsesCtx, responsesCancel = context.WithTimeout(ctx, upstreamResponsesRouteAttemptTimeout)
+	}
+	defer responsesCancel()
+	status, requestErr := sendUpstreamResponsesProbeShape(responsesCtx, client, upstreamURL(base, "/v1/responses"), key, model, shape)
+	if (errors.Is(requestErr, context.DeadlineExceeded) || errors.Is(responsesCtx.Err(), context.DeadlineExceeded)) && ctx.Err() == nil {
+		if responsesHTTPRouteDisabled(ctx, client, base, key) {
+			if state, ok := ctx.Value(responsesProbeRouteStateKey{}).(*responsesProbeRouteState); ok && state != nil {
+				state.disabled.Store(true)
+			}
+			status, requestErr = sendUpstreamChatProbeShape(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model, shape)
+			return status, domain.FormatOpenAIChat, requestErr
+		}
+	}
 	if shouldFallbackTestRequest(status, requestErr) && ctx.Err() == nil {
 		format = domain.FormatOpenAIChat
 		status, requestErr = sendUpstreamChatProbeShape(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model, shape)

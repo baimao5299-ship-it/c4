@@ -6,9 +6,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/is7qin/c3api/internal/domain"
@@ -67,6 +69,78 @@ func TestTestUpstreamFallsBackWhenResponsesForbiddenChatOnly(t *testing.T) {
 	require.True(t, result.OK)
 	require.Empty(t, result.ErrorCode)
 	require.Equal(t, []string{"/v1/models", "/v1/responses", "/v1/chat/completions"}, paths)
+}
+
+// A relay may expose /v1/responses only as a WebSocket endpoint. The HTTP
+// catalogue is still valid and the same model can work through Chat; the
+// validator must detect that transport once instead of timing out every model
+// on an unusable Responses POST.
+func TestValidateUpstreamModelsSkipsWebSocketOnlyResponsesRoute(t *testing.T) {
+	key := "relay-key"
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
+			_, _ = io.WriteString(w, `{"id":"chat-ok","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"hi"}}]}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	status, format, err := sendUpstreamModelProbeWithPreferredShape(withResponsesProbeRouteDisabled(context.Background()), server.Client(), server.URL, key, "gpt-6-astra", responsesProbeCanonical)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, domain.FormatOpenAIChat, format)
+	require.Equal(t, []string{
+		http.MethodPost + " /v1/chat/completions",
+	}, paths)
+}
+
+type responsesTimeoutRouteTransport struct {
+	paths *[]string
+}
+
+func (t responsesTimeoutRouteTransport) SupportsHTTPTrace() bool { return true }
+
+func (t responsesTimeoutRouteTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	*t.paths = append(*t.paths, r.Method+" "+r.URL.Path)
+	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/responses":
+		return nil, context.DeadlineExceeded
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/responses":
+		return &http.Response{
+			StatusCode: http.StatusUpgradeRequired,
+			Header:     http.Header{"Upgrade": []string{"websocket"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"WebSocket upgrade required"}}`)),
+			Request:    r,
+		}, nil
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"chat-ok","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"hi"}}]}`)),
+			Request:    r,
+		}, nil
+	default:
+		return nil, errors.New("unexpected probe route")
+	}
+}
+
+func TestValidateModelCatalogueRecoversAfterResponsesTimeoutOnWebSocketRoute(t *testing.T) {
+	paths := []string{}
+	client := &http.Client{Transport: responsesTimeoutRouteTransport{paths: &paths}}
+	result := validateModelCatalogue(context.Background(), client, "https://relay.example.test", "relay-key", []string{"gpt-6-astra"})
+	require.True(t, result.ValidationComplete)
+	require.True(t, result.OK)
+	require.Equal(t, []string{"gpt-6-astra"}, result.Models)
+	require.Equal(t, []string{
+		http.MethodPost + " /v1/responses",
+		http.MethodGet + " /v1/responses",
+		http.MethodPost + " /v1/chat/completions",
+	}, paths)
 }
 
 func TestParseUpstreamModelsPayloadAcceptsUTF8BOM(t *testing.T) {
