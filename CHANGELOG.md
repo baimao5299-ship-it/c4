@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.0.1-beta.34] - 2026-09-05
+
+- Expose administrator referral relationship and balance-ledger audit views.
+- Make usage summary rankings report reliable cost-availability flags.
+- Label locally built deployment images with the exact commit identifier.
+
+## [v0.0.1-beta.33] - 2026-09-05
+
+- Finalize admin usage rankings, total-balance sorting, and protocol conversion
+  resilience for mixed Responses, Messages, and Chat Completions traffic.
+
 ## [v0.0.1-beta.32] - 2026-09-05
 
 - Require explicit confirmation before starting full upstream validation.
