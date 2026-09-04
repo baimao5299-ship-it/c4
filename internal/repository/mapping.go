@@ -156,19 +156,18 @@ func toDomainUpstream(u *ent.Upstream) *domain.Upstream {
 	if u == nil {
 		return nil
 	}
-	var models []string
-	if u.ModelsCheckedAt != nil {
-		// Only a timestamp makes the catalogue authoritative. This preserves a
-		// verified empty list as [] while keeping never-validated rows unknown.
-		models = append([]string{}, u.Models...)
-	}
+	// Keep every persisted capability in the domain object, including models
+	// retained after an incomplete validation. ModelsCheckedAt separately says
+	// whether the list is exhaustive; hiding the retained slice here made the
+	// admin API show zero models and let a later manual success overwrite the
+	// full snapshot with only the model that was just tested.
+	models := append([]string{}, u.Models...)
 	modelFormats := cloneUpstreamModelFormats(u.ModelFormats)
 	return &domain.Upstream{
 		ID: u.ID, Name: u.Name, BaseURL: u.BaseURL, UpstreamKey: u.UpstreamKey,
-		// Preserve an explicitly verified empty catalogue as a non-nil empty
-		// slice. ModelsCheckedAt distinguishes it from an unknown catalogue, and
-		// the API mapper relies on that distinction to emit [] rather than omit
-		// the field.
+		// ModelsCheckedAt distinguishes an exhaustive catalogue from a retained
+		// or not-yet-complete one. The model slice remains available for admin
+		// display and merge-on-success behavior in both cases.
 		Models: models, ModelFormats: modelFormats, ModelsCheckedAt: u.ModelsCheckedAt,
 		ModelsError:  u.ModelsError,
 		MultiplierBP: u.MultiplierBp, Enabled: u.Enabled, Note: u.Note,

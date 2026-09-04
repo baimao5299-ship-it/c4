@@ -10,6 +10,16 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.23] - 2026-09-04
+
+### Fixed
+
+- Retained model capabilities from an incomplete upstream validation are now
+  preserved through repository reads and exposed by the admin API. The
+  dashboard no longer shows zero models after a partial timeout, and a later
+  successful manual test no longer replaces the retained catalogue with only
+  the tested model.
+
 ## [v0.0.1-beta.22] - 2026-09-04
 
 ### Fixed

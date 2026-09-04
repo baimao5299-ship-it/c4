@@ -314,9 +314,10 @@ type Upstream struct {
 	Name        string
 	BaseURL     string
 	UpstreamKey *string
-	// Models is the last successfully read /v1/models catalogue. A nil or
-	// unchecked catalogue is intentionally treated as unknown by upstream-pool
-	// routing; it must not silently mean "all models".
+	// Models is the persisted capability list, including models retained after
+	// an incomplete validation. ModelsCheckedAt determines whether the list is
+	// exhaustive; an unchecked list remains visible to operators but does not
+	// restrict upstream-pool routing to only these entries.
 	Models []string
 	// ModelFormats records the request protocols that were verified for each
 	// model in the same capability snapshot as Models. An empty map is the

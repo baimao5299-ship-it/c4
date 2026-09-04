@@ -330,6 +330,20 @@ var _ service.Store = (*upstreamTestStore)(nil)
 var _ service.UpstreamStore = (*upstreamTestStore)(nil)
 var _ service.UpstreamModelStore = (*upstreamTestStore)(nil)
 
+func TestToAPIUpstreamExposesRetainedModelsWithoutCompleteStamp(t *testing.T) {
+	row := &domain.Upstream{
+		ID:     50,
+		Name:   "relay",
+		Models: []string{"model-a", "model-b"},
+	}
+
+	got := toAPIUpstream(row)
+
+	require.NotNil(t, got.Models)
+	require.Equal(t, []string{"model-a", "model-b"}, *got.Models)
+	require.Nil(t, got.ModelsCheckedAt)
+}
+
 func TestUpstreamManagementLifecycleAndSecretBoundary(t *testing.T) {
 	store := newUpstreamTestStore()
 	svc := service.New(store, fakeSched{}, service.NopInvalidator{}, nil, nil, &fakeKeys{}, nil)
